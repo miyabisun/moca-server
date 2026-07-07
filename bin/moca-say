@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# moca-say — プレーンテキストを VOICEPEAK (宮舞モカ) で合成し、生PCM (s16le / 48kHz / mono) を stdout に流す
+#
+# 使い方:
+#   moca-say "こんにちは。今日もいい天気ですね。"
+#   echo "テキスト" | moca-say
+#
+# 文単位(。！？改行)で分割して台本 JSONL に変換し、moca-render に渡す薄いラッパー。
+# 感情パラメータ付きで合成したい場合は moca-render を直接使う。
+set -euo pipefail
+
+# 非対話 ssh 経由だとロケールが POSIX になり、sed の文字クラスが
+# UTF-8 をバイト単位で分断してしまうため明示的に固定する
+export LC_ALL=ja_JP.utf8
+
+text="${*:-$(cat)}"
+
+printf '%s\n' "$text" \
+  | sed -e 's/[。！？]/&\n/g' \
+  | jq -R -c 'select((gsub("[ 　]"; "") | length) > 0) | {text: .}' \
+  | "$(dirname "$0")/moca-render"

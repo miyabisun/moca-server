@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# moca — Mac 側クライアント。moca-server にテキストを送り、届いた WAV をスピーカーで再生する
+#
+# セットアップ (Mac):
+#   brew install ffmpeg          # ffplay を使う
+#   このファイルを PATH の通った場所に置く (例: ~/bin/moca)
+#
+# 使い方:
+#   moca "こんにちは。宮舞モカです。"     # /analyze で台本JSONを生成 (stdout に表示) → 感情付きで再生
+#   moca "..." > take1.json               # 台本を保存しておけば同じ演技を何度でも再収録できる
+#   moca < take1.json                     # 台本JSON (配列) を渡すと /analyze を通さず直接 /say へ
+#   moca -r "読み上げるテキスト"          # 感情分析なしでそのまま /say へ (低レイテンシ。朗読・通知向け)
+#   moca -r < novel.txt                   # stdin のテキストも可 (EOF まで読んでから送る)
+#
+# 通知の見張りのような行単位の連続読み上げは while ループと組み合わせる:
+#   tail -f app.log | grep --line-buffered ERROR | while read -r line; do moca -r "$line"; done
+#
+# 環境変数:
+#   MOCA_URL — moca-server の URL (デフォルト: http://manjaro:3000)
+set -euo pipefail
+
+URL="${MOCA_URL:-http://manjaro:3000}"
+
+raw=""
+if [ "${1:-}" = "-r" ] || [ "${1:-}" = "--raw" ]; then
+  raw=1
+  shift
+fi
+
+input="${*:-$(cat)}"
+if [ -z "${input// /}" ]; then
+  echo "usage: moca [-r] <text>  (または stdin からテキスト/台本JSONを渡す)" >&2
+  exit 2
+fi
+
+play_wav() {
+  # -N: バッファリング無効 (届いたそばから ffplay に流す)
+  ffplay -hide_banner -loglevel error -nodisp -autoexit -
+}
+
+# -r: 感情分析なしで text/plain のまま /say へ
+if [ -n "$raw" ]; then
+  printf '%s' "$input" | curl -sfN --data-binary @- "$URL/say" | play_wav
+  exit 0
+fi
+
+# 空白を除いた先頭が [ かつ末尾が ] なら台本JSON (配列) とみなす。
+# 「[速報] 今日は…」のような括弧書き始まりのテキストは末尾条件で弾かれる
+stripped=$(printf '%s' "$input" | tr -d '[:space:]')
+
+if [ "${stripped:0:1}" = "[" ] && [ "${stripped: -1}" = "]" ]; then
+  printf '%s' "$input" \
+    | curl -sfN -H 'content-type: application/json' --data-binary @- "$URL/say" \
+    | play_wav
+else
+  script=$(printf '%s' "$input" | curl -sf --data-binary @- "$URL/analyze")
+  printf '%s\n' "$script"
+  printf '%s' "$script" \
+    | curl -sfN -H 'content-type: application/json' --data-binary @- "$URL/say" \
+    | play_wav
+fi
