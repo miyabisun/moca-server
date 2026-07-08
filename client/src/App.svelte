@@ -5,18 +5,21 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import * as api from '$lib/api.js';
-	import { play } from '$lib/player.svelte.js';
+	import { play, playAll, stop, player } from '$lib/player.svelte.js';
 	import { addToast } from '$lib/toast.svelte.js';
 
 	let projects = $state(null);
 	let selectedId = $state(null);
 	let selected = $state(null); // full project detail with lines
-	let pourInOpen = $state(false);
+	// Pour-in modal open flag. New lines always append at the end of the project.
+	let pourIn = $state(false);
 	let confirm = $state(null); // { kind, target, busy }
-	// Per-line editor revision. Bumped ONLY on reanalyze so the inline editor
-	// remounts and re-seeds from the fresh server script; autosave reloads must
-	// not bump it, or an open editor would reset mid-edit.
+	// Per-line editor revision. Bumped ONLY when a mode toggle re-seeds a script so
+	// the inline editor remounts from the fresh server script; autosave reloads
+	// must not bump it, or an open editor would reset mid-edit.
 	let editorRev = $state({});
+	// Per-line busy flag for the アナ→演技 toggle (analysis is ~10s; blocks re-taps).
+	let toggleBusy = $state({});
 
 	async function loadProjects() {
 		projects = await api.listProjects();
@@ -58,6 +61,23 @@
 		play(line).catch((e) => addToast(`再生に失敗しました: ${e.message}`, 'danger'));
 	}
 
+	// Whole-project listen-through (radio). Tapping the active project stops it.
+	async function onPlayAll(projectId) {
+		if (player.radioProjectId === projectId) {
+			stop();
+			return;
+		}
+		try {
+			const lines =
+				selectedId === projectId && selected
+					? selected.lines
+					: (await api.getProject(projectId)).lines;
+			playAll(projectId, lines);
+		} catch (e) {
+			addToast(`再生に失敗しました: ${e.message}`, 'danger');
+		}
+	}
+
 	async function saveLine(line, patch) {
 		try {
 			await api.updateLine(line.id, patch);
@@ -67,15 +87,42 @@
 		}
 	}
 
+	async function reorderLines(order) {
+		try {
+			await api.reorderLines(selectedId, order);
+			await loadSelected();
+		} catch (e) {
+			addToast(`並び替えに失敗しました: ${e.message}`, 'danger');
+		}
+	}
+
+	// Mode toggle (the badge). アナ→演技 runs /analyze inline; 演技→アナ is
+	// destructive (discards hand-tuned JSON) and routes through ConfirmModal.
+	async function toggleMode(line) {
+		if (line.mode === 'acting') {
+			confirm = { kind: 'to-announcer', target: line, busy: false };
+			return;
+		}
+		if (toggleBusy[line.id]) return; // analysis already running
+		toggleBusy = { ...toggleBusy, [line.id]: true };
+		try {
+			const script = await api.analyzeLine(line.text);
+			await api.updateLine(line.id, { mode: 'acting', script });
+			await loadSelected();
+			editorRev = { ...editorRev, [line.id]: (editorRev[line.id] ?? 0) + 1 };
+		} catch (e) {
+			addToast(`分析に失敗しました: ${e.message}`, 'danger');
+		} finally {
+			toggleBusy = { ...toggleBusy, [line.id]: false };
+		}
+	}
+
 	// --- Confirm-guarded actions ---
 	function requestDeleteProject(project) {
 		confirm = { kind: 'delete-project', target: project, busy: false };
 	}
 	function requestDeleteLine(line) {
 		confirm = { kind: 'delete-line', target: line, busy: false };
-	}
-	function requestReanalyze(line) {
-		confirm = { kind: 'reanalyze', target: line, busy: false };
 	}
 
 	async function runConfirm() {
@@ -93,13 +140,9 @@
 			} else if (kind === 'delete-line') {
 				await api.deleteLine(target.id);
 				await loadSelected();
-			} else if (kind === 'reanalyze') {
-				const script = await api.analyzeLine(target.text);
-				await api.updateLine(target.id, { mode: 'acting', script });
+			} else if (kind === 'to-announcer') {
+				await api.updateLine(target.id, { mode: 'announcer', script: null });
 				await loadSelected();
-				// Force the (possibly open) inline editor to re-seed from the new script.
-				editorRev = { ...editorRev, [target.id]: (editorRev[target.id] ?? 0) + 1 };
-				addToast('再分析しました');
 			}
 		} catch (e) {
 			addToast(`失敗しました: ${e.message}`, 'danger');
@@ -121,13 +164,18 @@
 			confirmLabel: '削除',
 			danger: true
 		},
-		reanalyze: {
-			title: '再分析',
-			message: '再分析すると、この行の手調整した感情パラメータは破棄されます。',
-			confirmLabel: '再分析',
-			danger: false
+		'to-announcer': {
+			title: '演技を解除',
+			message: '手調整した感情パラメータを破棄してアナウンサーに戻します。元に戻せません。',
+			confirmLabel: '解除',
+			danger: true
 		}
 	};
+
+	// Pour-in (append new lines at the end of the project).
+	function openPourIn() {
+		pourIn = true;
+	}
 
 	async function onPourInDone() {
 		await Promise.all([loadSelected(), loadProjects()]);
@@ -138,38 +186,48 @@
 	});
 </script>
 
-<div class="layout">
-	<aside class="list-pane">
-		<ProjectList
-			{projects}
-			{selectedId}
-			onselect={selectProject}
-			oncreate={createProject}
-			onrequestDelete={requestDeleteProject}
-		/>
-	</aside>
-	<main class="detail-pane">
-		{#if selected}
-			<LineWorkspace
-				project={selected}
-				{editorRev}
-				onrename={renameProject}
-				{onplay}
-				onsave={saveLine}
-				onrequestDelete={requestDeleteLine}
-				onrequestReanalyze={requestReanalyze}
-				onpourin={() => (pourInOpen = true)}
+<div class="app">
+	<header class="app-header">
+		<span class="site-title">宮舞モカ 台本工房</span>
+	</header>
+
+	<div class="layout">
+		<aside class="list-pane">
+			<ProjectList
+				{projects}
+				{selectedId}
+				radioProjectId={player.radioProjectId}
+				onselect={selectProject}
+				oncreate={createProject}
+				onplayall={onPlayAll}
+				onrequestDelete={requestDeleteProject}
 			/>
-		{:else}
-			<div class="placeholder">プロジェクトを選択してください。</div>
-		{/if}
-	</main>
+		</aside>
+		<main class="detail-pane">
+			{#if selected}
+				<LineWorkspace
+					project={selected}
+					{editorRev}
+					{toggleBusy}
+					onrename={renameProject}
+					{onplay}
+					onsave={saveLine}
+					onreorder={reorderLines}
+					ontoggle={toggleMode}
+					onrequestDelete={requestDeleteLine}
+					onpourin={openPourIn}
+				/>
+			{:else}
+				<div class="placeholder">プロジェクトを選択してください。</div>
+			{/if}
+		</main>
+	</div>
 </div>
 
-{#if pourInOpen && selected}
+{#if pourIn && selected}
 	<PourInModal
 		projectId={selected.id}
-		onclose={() => (pourInOpen = false)}
+		onclose={() => (pourIn = false)}
 		ondone={onPourInDone}
 	/>
 {/if}
@@ -190,10 +248,29 @@
 <Toast />
 
 <style lang="sass">
+.app
+	display: grid
+	grid-template-rows: auto 1fr
+	height: 100dvh
+
+// Identity chrome only: a thin surface-raised band with the site title. No
+// navigation, no actions, no shadow.
+.app-header
+	display: flex
+	align-items: center
+	padding: var(--sp-2) var(--sp-4)
+	background: var(--c-surface)
+	border-bottom: 1px solid var(--c-border)
+
+.site-title
+	font-size: var(--fs-md)
+	font-weight: 500
+	color: var(--c-text-muted)
+
 .layout
 	display: grid
 	grid-template-columns: 1fr
-	height: 100dvh
+	min-height: 0
 
 	@media (min-width: 768px)
 		grid-template-columns: 20rem 1fr

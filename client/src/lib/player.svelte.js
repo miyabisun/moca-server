@@ -1,12 +1,18 @@
 import { sayTextUrl, sayScriptRequest } from '$lib/api.js';
 
-// Single global audio player: exactly one line plays at a time. Starting a new
-// line stops the previous one (DESIGN.md). Audio is never stored — every play
-// streams a fresh synthesis from /say. Acting lines POST the script JSON and
-// play the resulting blob; announcer lines stream directly via a GET src.
+// Single global audio player. Two ways to start: a single line (play) or a
+// whole-project listen-through (playAll, "radio"). Exactly one line sounds at a
+// time and the two modes are mutually exclusive — starting either stops the
+// other (DESIGN.md). Audio is never stored: every play streams a fresh /say
+// synthesis. Acting lines POST the script JSON and play the resulting blob;
+// announcer lines stream directly via a GET src.
 let playingId = $state(null);
 let loadingId = $state(null);
 let spinnerId = $state(null); // set only after 300ms of loading
+let radioProjectId = $state(null); // project currently playing through as radio
+
+let queue = null; // ordered lines for the active radio run
+let queueIndex = 0;
 
 let audio = null;
 let objectUrl = null;
@@ -21,7 +27,7 @@ function ensureAudio() {
 		clearSpinnerTimer();
 		spinnerId = null;
 	});
-	audio.addEventListener('ended', reset);
+	audio.addEventListener('ended', onEnded);
 	audio.addEventListener('error', reset);
 	return audio;
 }
@@ -45,6 +51,20 @@ function reset() {
 	loadingId = null;
 	spinnerId = null;
 	clearSpinnerTimer();
+	queue = null;
+	queueIndex = 0;
+	radioProjectId = null;
+}
+
+// During a radio run, advance to the next line instead of resetting; otherwise
+// (single line, or last line of the run) stop.
+function onEnded() {
+	if (queue && queueIndex + 1 < queue.length) {
+		queueIndex++;
+		startLine(queue[queueIndex]).catch(() => stop());
+	} else {
+		stop();
+	}
 }
 
 export function stop() {
@@ -58,15 +78,10 @@ export function stop() {
 	reset();
 }
 
-export async function play(line) {
-	// Toggle off if the same line is already active.
-	if (playingId === line.id || loadingId === line.id) {
-		stop();
-		return;
-	}
-	stop();
+// Synthesize and play one line. Does not touch the queue/radio state, so it is
+// reused both for single play and for each leg of a radio run.
+async function startLine(line) {
 	const my = ++token;
-
 	const el = ensureAudio();
 	loadingId = line.id;
 	clearSpinnerTimer();
@@ -90,9 +105,37 @@ export async function play(line) {
 		playingId = line.id;
 		await el.play();
 	} catch (e) {
-		if (my === token) reset();
+		// A superseded attempt's failure (e.g. its play() promise rejecting after
+		// stop() yanked the src) must not bubble up and kill the current playback.
+		if (my !== token) return;
+		reset();
 		throw e;
 	}
+}
+
+export async function play(line) {
+	// Toggle off if the same line is already active.
+	if (playingId === line.id || loadingId === line.id) {
+		stop();
+		return;
+	}
+	stop(); // cancels any single play or radio run in progress
+	await startLine(line);
+}
+
+// Play a whole project's lines in order like radio. Tapping the same project
+// again stops it; starting a run cancels any single play or other run.
+export function playAll(projectId, lines) {
+	if (radioProjectId === projectId) {
+		stop();
+		return;
+	}
+	stop();
+	if (!lines || lines.length === 0) return;
+	queue = lines;
+	queueIndex = 0;
+	radioProjectId = projectId;
+	startLine(lines[0]).catch(() => stop());
 }
 
 export const player = {
@@ -104,5 +147,8 @@ export const player = {
 	},
 	get spinnerId() {
 		return spinnerId;
+	},
+	get radioProjectId() {
+		return radioProjectId;
 	}
 };

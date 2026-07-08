@@ -23,6 +23,11 @@
 	--radius-lg: 12px
 	--radius-full: 9999px
 
+	// Shared computed height for the two pane headers (list + detail) so the
+	// workspace reads as one surface. Sized to clear the list header's 新規
+	// button so both headers settle on this same min-height, not on content.
+	--pane-head-h: 60px
+
 	// --- Neutral chrome (Sumi / dark) ---
 	--c-bg: #191919
 	--c-surface: #232323
@@ -43,6 +48,10 @@
 	--c-accent-bg: rgba(201, 160, 134, 0.15)
 	--c-accent-border: rgba(201, 160, 134, 0.4)
 	--c-accent-active: rgba(201, 160, 134, 0.6)
+	// Deepened mocha for filled primary buttons (white text ≥ 5.5:1); the pale
+	// accent above fails white-on-accent on dark, so it stays for underlines /
+	// focus rings / accent text only.
+	--c-accent-strong: #8a5a3c
 
 	--c-link: #7fdbff
 
@@ -114,6 +123,8 @@ button
 		--c-accent-bg: rgba(107, 70, 50, 0.12)
 		--c-accent-border: rgba(107, 70, 50, 0.4)
 		--c-accent-active: rgba(107, 70, 50, 0.6)
+		// Washi primary buttons are unchanged: strong == accent here.
+		--c-accent-strong: #6b4632
 
 		--c-link: #14506e
 

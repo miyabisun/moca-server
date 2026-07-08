@@ -8,11 +8,13 @@
 	let {
 		project,
 		editorRev = {},
+		toggleBusy = {},
 		onrename,
 		onplay,
 		onsave,
+		onreorder,
+		ontoggle,
 		onrequestDelete,
-		onrequestReanalyze,
 		onpourin
 	} = $props();
 
@@ -28,6 +30,43 @@
 		const name = draftName.trim();
 		if (name && name !== project.name) onrename?.(name);
 		editingName = false;
+	}
+
+	// --- Drag reorder state (owned here; LineRow reports drag events) ---
+	let dragId = $state(null); // id of the row being dragged
+	let overId = $state(null); // id of the row the pointer is over
+	let overPos = $state(null); // 'before' | 'after' relative to overId
+
+	function onDragStart(line) {
+		dragId = line.id;
+	}
+	function onDragOver(line, pos) {
+		if (dragId == null) return;
+		if (line.id === dragId) return; // dropping onto self is a no-op; skip indicator too
+		overId = line.id;
+		overPos = pos;
+	}
+	function clearDrag() {
+		dragId = null;
+		overId = null;
+		overPos = null;
+	}
+	function onDrop() {
+		const droppedId = dragId;
+		const targetId = overId;
+		const pos = overPos;
+		clearDrag();
+		const original = project.lines.map((l) => l.id);
+		const ids = original.slice();
+		const from = ids.indexOf(droppedId);
+		if (from === -1 || ids.indexOf(targetId) === -1) return;
+		const [moved] = ids.splice(from, 1);
+		// Recompute the target index after removal, then insert before/after it.
+		let target = ids.indexOf(targetId);
+		if (pos === 'after') target += 1;
+		ids.splice(target, 0, moved);
+		if (ids.every((id, i) => id === original[i])) return; // no-op: order unchanged
+		onreorder?.(ids);
 	}
 </script>
 
@@ -53,19 +92,27 @@
 
 	<div class="lines">
 		{#if project.lines.length === 0}
-			<p class="empty">まだ行がありません。下のボタンからテキストを流し込みましょう。</p>
+			<p class="empty">まだ行がありません。下の「台本追加」から台本を追加しましょう。</p>
 		{:else}
 			{#each project.lines as line (line.id)}
 				<LineRow
 					{line}
 					rev={editorRev[line.id] ?? 0}
 					playing={player.playingId === line.id}
-					loading={player.loadingId === line.id}
 					spinner={player.spinnerId === line.id}
+					toggling={toggleBusy[line.id] ?? false}
+					draggable={project.lines.length > 1}
+					dragging={dragId === line.id}
+					dropBefore={overId === line.id && overPos === 'before'}
+					dropAfter={overId === line.id && overPos === 'after'}
 					{onplay}
 					{onsave}
+					{ontoggle}
 					{onrequestDelete}
-					{onrequestReanalyze}
+					ondragstart={onDragStart}
+					ondragover={onDragOver}
+					ondrop={onDrop}
+					ondragend={clearDrag}
 				/>
 			{/each}
 		{/if}
@@ -73,7 +120,7 @@
 
 	<div class="footer">
 		<button type="button" class="primary" onclick={onpourin}>
-			<Icon name="plus" /> テキストを流し込む
+			<Icon name="plus" /> 台本追加
 		</button>
 	</div>
 </div>
@@ -85,10 +132,13 @@
 	height: 100%
 	min-height: 0
 
+// Shares --pane-head-h with ProjectList so the two pane headers align across
+// the boundary and the workspace reads as one surface.
 .pane-head
 	display: flex
-	align-items: baseline
+	align-items: center
 	gap: var(--sp-3)
+	min-height: var(--pane-head-h)
 	padding: var(--sp-3)
 	border-bottom: 1px solid var(--c-border)
 
@@ -142,8 +192,8 @@
 	align-items: center
 	gap: var(--sp-1)
 	padding: var(--sp-2) var(--sp-4)
-	background: var(--c-accent)
-	border: 1px solid var(--c-accent)
+	background: var(--c-accent-strong)
+	border: 1px solid var(--c-accent-strong)
 	border-radius: var(--radius-sm)
 	color: var(--c-on-accent)
 	font-size: var(--fs-md)

@@ -56,7 +56,7 @@
 	}
 </script>
 
-<Modal title="テキストを流し込む" onclose={close} maxWidth="34rem" maxHeight="85dvh">
+<Modal title="台本追加" onclose={close} maxWidth="34rem" maxHeight="85dvh">
 	<textarea bind:value={text} rows="10" placeholder="1行が1つの台本行になります" disabled={running}></textarea>
 
 	<div class="modes">
@@ -88,7 +88,7 @@
 	<div class="actions">
 		<button type="button" class="quiet" onclick={close}>閉じる</button>
 		<button type="button" class="primary" disabled={running || !text.trim()} onclick={confirm}>
-			{running ? '処理中…' : '流し込む'}
+			{running ? '処理中…' : '追加'}
 		</button>
 	</div>
 </Modal>
@@ -167,8 +167,8 @@ textarea
 		color: var(--c-text-sub)
 
 	.primary
-		background: var(--c-accent)
-		border: 1px solid var(--c-accent)
+		background: var(--c-accent-strong)
+		border: 1px solid var(--c-accent-strong)
 		color: var(--c-on-accent)
 
 		&:disabled

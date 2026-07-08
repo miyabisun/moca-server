@@ -62,8 +62,8 @@
 		color: var(--c-text-sub)
 
 	.primary
-		background: var(--c-accent)
-		border: 1px solid var(--c-accent)
+		background: var(--c-accent-strong)
+		border: 1px solid var(--c-accent-strong)
 		color: var(--c-on-accent)
 
 		&.danger

@@ -41,6 +41,13 @@
 	{:else if name === 'grip'}
 		<line x1="4" y1="9" x2="20" y2="9" />
 		<line x1="4" y1="15" x2="20" y2="15" />
+	{:else if name === 'grip-vertical'}
+		<circle cx="9" cy="5" r="1" />
+		<circle cx="9" cy="12" r="1" />
+		<circle cx="9" cy="19" r="1" />
+		<circle cx="15" cy="5" r="1" />
+		<circle cx="15" cy="12" r="1" />
+		<circle cx="15" cy="19" r="1" />
 	{/if}
 </svg>
 

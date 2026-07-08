@@ -19,6 +19,12 @@ colors:
   accent-subtle: "rgba(107, 70, 50, 0.12)"
   accent-dark: "#c9a086"
   accent-subtle-dark: "rgba(201, 160, 134, 0.15)"
+  # accent-strong-dark: the Sumi primary-button surface. The pale mocha
+  # accent-dark (needed for underlines/focus on dark surfaces) fails
+  # white-on-accent contrast (~2:1), so filled primary buttons in Sumi
+  # use this deepened mocha instead (white text ≥ 5.5:1). Washi primary
+  # buttons keep using accent unchanged.
+  accent-strong-dark: "#8a5a3c"
   # --- Functional data colors: the five emotion axes ---
   # One hue per VOICEPEAK emotion axis. Washi values are darkness-ramp
   # inks (read as ink first, hue second); Sumi values are muted pastels
@@ -76,7 +82,8 @@ express them.
 - **A project is an ordered list of lines.** A line is the atomic unit of
   listening, editing, and (future) export. Line order is the narration
   order.
-- **Every line is in exactly one of two modes, chosen at pour-in:**
+- **Every line is in exactly one of two modes**, chosen at pour-in and
+  **togglable per line afterward** (the mode badge is the toggle):
   - **アナウンサー (announcer):** plain text, zero emotion parameters,
     synthesized via the text path. The unadorned 宮舞モカ voice is a
     feature, not a fallback — this mode is the default.
@@ -85,9 +92,33 @@ express them.
     owned by the user. After analysis, the JSON is hand-tuned via the
     editor; re-analysis never runs implicitly (it would overwrite the
     user's direction).
+  - Toggling アナ→演技 runs /analyze for that line (explicit user tap =
+    allowed; show the analysis latency honestly). Toggling 演技→アナ
+    discards the hand-tuned script JSON and is guarded by ConfirmModal.
+- **Whole-project listen-through is a first-class review tool.** Reading
+  errors (e.g. "Hard" spelled out letter by letter) are only caught by
+  ear, so a project plays end to end like radio: lines play sequentially
+  in narration order, the playing indicator walks down the rows, and one
+  tap stops it.
 - **Emotion axes are a fixed five:** bosoboso, doyaru, honwaka, angry,
   teary (0–100 each), plus speed / pitch / pause. The editor exposes
   exactly these — no abstraction on top, no hidden parameters.
+- **読み替え辞書 (reading dictionary):** a global table of surface →
+  reading pairs applied to text **at synthesis time only**. The master
+  text — line text and script JSON — never changes, and the UI always
+  displays the original spelling; the dictionary rewrites sound, not
+  text. Entries apply longest-surface-first; ASCII surfaces match
+  case-insensitively. It applies to アナウンサー text and to every 演技
+  segment text; /analyze always reads the original.
+- **Fixing a misreading is a permanent two-way choice, made by ear:**
+  words that are wrong everywhere (foreign words, proper nouns) go in
+  the dictionary; readings that depend on context are fixed by editing
+  that one line's text. The listen-through exists to surface these; the
+  UI keeps both fixes one step away and never pretends to automate the
+  choice.
+- **Accent / intonation control is explicitly out of scope.** VOICEPEAK
+  decides accent from the (rewritten) text; occasional odd intonation is
+  accepted as character, not fought with tooling.
 - **ZIP / bulk audio export is deliberately out of scope** until storage
   economics change. Nothing in the UI may promise batch download.
 
@@ -110,32 +141,87 @@ adjustments, not emotions — they stay in neutral chrome.
 
 アナウンサー lines are **colorless by definition**: no emotion chips, no
 data color anywhere on the row. The visual quietness of an announcer row
-IS the mode indicator, reinforced by a muted outline badge (アナ / 演技)
-in caption type.
+IS the mode indicator, reinforced by the mode toggle badge (アナ / 演技)
+in caption type — a real button (see Components), but visually as quiet
+as an outline badge.
+
+**Primary buttons in Sumi** use `accent-strong-dark` as their surface
+with white text; `accent-dark` (the pale mocha) remains the color of
+active-tab underlines, focus rings, and accent text, where it must stand
+out against dark surfaces. One accent identity, two luminances, each
+where its contrast works.
 
 ## Layout
 
-The template's two-pane list + detail grid applies directly:
+The template's two-pane list + detail grid applies directly, under one
+piece of shared chrome:
 
+- **App header:** a thin full-width band (a slim bar, visibly lighter
+  presence than the panes — surface-raised, 1px hairline bottom border)
+  holding the site title 「宮舞モカ 台本工房」 in label type, muted,
+  and the app's only navigation: two Sumi-recipe tabs, 台本 (the
+  two-pane workspace) and 辞書 (the reading dictionary). Nothing else
+  lives here; the band never competes with the workspace below.
 - **List pane: projects.** Card rows — project name (label type), line
   count and updated-at (caption muted). The one primary button here is
   「新規プロジェクト」.
 - **Detail pane: the line workspace.** A single scrolling column of line
   rows in narration order. The pane's sticky footer holds the pour-in
-  entry point (「テキストを流し込む」) — pour-in is the primary action
-  of this pane.
+  entry point (labeled 「台本追加」) — pour-in is the primary action of
+  this pane.
+- **The two pane headers share one computed height** — title rows,
+  padding, and any header controls align across the pane boundary so the
+  workspace reads as one surface, not two stacked tools.
+- **Dictionary view (辞書 tab):** not two-pane — a single dense table in
+  the comic-server bookshelf spirit: one row per entry, columns 表記 /
+  読み / play / delete, scanning many entries at once is the point. The
+  add form (two inputs + the screen's one primary button) sits above the
+  table. The per-row play button speaks the reading via /say for an
+  instant ear check.
 
 ## Components
 
 Domain components on top of the Sumi recipes:
 
-- **Line row:** a card row containing, left to right: play icon-button,
-  line text (body-sm, two lines max, ellipsized), emotion chips (演技
-  lines only), mode badge, overflow menu (edit / delete). Tapping the row
-  body expands the emotion editor inline (演技 lines) or an inline
-  textarea (アナウンサー lines). The currently-playing row carries a 4px
-  accent left bar per the template's data-bar recipe — playing is chrome
-  ("you are here"), not data.
+- **Project row (list pane):** play-all icon-button (SVG triangle) to
+  the left of the project name — tapping it starts the radio
+  listen-through of that project's lines in order. During playback the
+  button becomes stop, and the detail pane's playing indicator walks
+  down the rows. Line count and updated-at stay caption muted.
+- **Line row:** a card row containing, left to right: drag handle
+  (SVG grip-vertical, muted; cursor grab), play icon-button, line text
+  (body-sm, two lines max, ellipsized), emotion chips (演技 lines only),
+  mode toggle badge, delete icon-button (quiet, danger on hover). There
+  is no overflow menu and no edit button. Clicking the card toggles the
+  inline emotion editor on a 演技 line and does nothing on an
+  アナウンサー line — the card click is never an edit affordance. The
+  currently-playing row carries a 4px accent left bar per the template's
+  data-bar recipe — playing is chrome ("you are here"), not data.
+- **Line text is immutable in place.** There is no inline editing of any
+  kind (no input swap, no textarea, no contenteditable). All text
+  operations live in the line context menu.
+- **Line context menu (right-click / long-press on a line card):** the
+  browser context menu is intercepted and replaced with a Sumi menu
+  modal scoped to that line, top to bottom:
+  - **台本追加** — inserts new lines *after this line* via the pour-in
+    modal (the sticky-footer 台本追加 keeps appending at the end).
+  - **テキスト編集** — a single-line text input pre-filled with the
+    line's text inside the modal; Enter / primary commits, Esc cancels.
+    This is the only way to change a line's text.
+  - **この行を複製** — duplicates the line (mode and script JSON
+    included), inserting the copy directly below. This exists for A/B
+    direction work: tune the copy's emotions, keep the better take,
+    delete the loser.
+- **Mode toggle badge (アナ / 演技):** caption-size outline badge that is
+  a real button. Tapping アナ runs /analyze on that line (button shows
+  the template spinner while analyzing, ~10s) and flips it to 演技;
+  tapping 演技 opens ConfirmModal (the hand-tuned JSON is destroyed)
+  before reverting to アナ. Visually it stays as quiet as a badge —
+  affordance comes from cursor and hover wash, not weight.
+- **Reorder by drag:** the grip handle drags the row; a 2px accent
+  insertion line shows the drop position between rows; dropping persists
+  the new order immediately. Reordering exists because narration order
+  is the artifact — but drag is the only mechanism; no up/down buttons.
 - **Play / stop button:** the template 36px icon-button with SVG
   triangle / square glyphs (`currentColor`, Lucide-style). Never the
   characters ▶ / |> / ■. One line plays at a time; starting a line stops
@@ -153,10 +239,10 @@ Domain components on top of the Sumi recipes:
   current value as caption at the right), and three scalar steppers for
   speed / pitch / pause in neutral chrome. Edits update the JSON
   immediately (autosave, no save button) — the play button is always one
-  tap away so the listen→nudge→listen loop never leaves the row. A quiet
-  「再分析」 action exists behind the overflow menu, guarded by
-  ConfirmModal (it discards hand tuning).
-- **Pour-in modal (テキスト流し込み):** the template modal with a large
+  tap away so the listen→nudge→listen loop never leaves the row.
+  Re-analysis has no dedicated control: it is the mode toggle round-trip
+  (演技→アナ→演技), each leg guarded as described above.
+- **Pour-in modal (台本追加):** the template modal with a large
   textarea and a two-option mode segmented control — アナウンサー
   (default) / 演技 — described in one caption line each. Confirm is the
   modal's primary button. In 演技 mode the modal shows per-line analyze
@@ -164,9 +250,8 @@ Domain components on top of the Sumi recipes:
   analysis is slow (~10s per line) and the UI says so plainly instead of
   pretending otherwise. Lines that fail analysis land as アナウンサー
   lines with a danger-role caption, never lost.
-- **Destructive actions** (project delete, line delete, 再分析) route
-  through ConfirmModal per the template. Line deletion from the overflow
-  menu is the danger-role button.
+- **Destructive actions** (project delete, line delete, 再分析,
+  演技→アナ toggle) route through ConfirmModal per the template.
 
 ## Do's and Don'ts
 
@@ -184,3 +269,7 @@ Domain components on top of the Sumi recipes:
   and emoji are banned even though this is an audio tool.
 - Do state real latency (analysis progress, first-audio spinner) in muted
   captions; never fake instant.
+- Do keep the master text sacred: the dictionary rewrites what is heard,
+  never what is displayed or stored in lines / script JSON.
+- Don't build accent or intonation controls — reading (どう読むか) is in
+  scope, melody (どう歌うか) is VOICEPEAK's.
