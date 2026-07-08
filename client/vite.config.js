@@ -20,7 +20,8 @@ export default defineConfig({
 		proxy: {
 			'/api': 'http://localhost:3000',
 			'/say': 'http://localhost:3000',
-			'/analyze': 'http://localhost:3000'
+			'/analyze': 'http://localhost:3000',
+			'/notify': 'http://localhost:3000'
 		}
 	}
 });

@@ -6,6 +6,7 @@
 	import LineContextMenu from '$lib/components/LineContextMenu.svelte';
 	import TextEditModal from '$lib/components/TextEditModal.svelte';
 	import DictionaryView from '$lib/components/DictionaryView.svelte';
+	import NotifySubscribe from '$lib/components/NotifySubscribe.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import * as api from '$lib/api.js';
 	import { play, playAll, stop, player } from '$lib/player.svelte.js';
@@ -232,6 +233,7 @@
 				辞書
 			</button>
 		</nav>
+		<NotifySubscribe />
 	</header>
 
 	{#if activeTab === 'script'}

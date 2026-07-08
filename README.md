@@ -24,6 +24,7 @@ claude -p による感情パラメータの自動生成に対応。
 - `bin/moca-render` — 合成エンジン。台本 JSONL → 生PCM (s16le / 48kHz / mono)
 - `bin/moca-say` — テキストを文分割して JSONL に変換し moca-render に渡すラッパー
 - `bin/moca` — CLI クライアント (bash / curl / ffplay があれば動く)
+- `bin/moca-notify` — 通知テキストを `POST /notify` に投げる薄いラッパー (bash / curl)
 
 ## API
 
@@ -34,6 +35,8 @@ claude -p による感情パラメータの自動生成に対応。
 | `POST /say` (text/plain) | そのまま合成した WAV をチャンク配信 |
 | `POST /say` (application/json) | 台本JSONを感情パラメータ付きで合成 |
 | `GET /say?text=...` | text/plain 版と同じ (ブラウザの `<audio>` 向け) |
+| `POST /notify` (text/plain) | 本文を購読中の SPA に broadcast する。空文字は 400、それ以外は 204。永続化・再送なし (誰も購読していなければ捨てる) |
+| `GET /notify/stream` | text/event-stream。通知購読の SSE ストリーム (管理画面ヘッダーのメガホン ON で接続) |
 
 合成はサーバー全体で直列化される（VOICEPEAK の多重起動が不安定なため）。
 
@@ -115,6 +118,33 @@ curl -sN --data-binary "テキスト" http://localhost:3000/say | ffplay -nodisp
 `moca` は入力の (空白を除いた) 先頭が `[`・末尾が `]` なら台本JSONとみなして
 `/analyze` をスキップし、直接 `/say` に投げる。
 
+### 通知購読 (`bin/moca-notify`)
+
+`moca` が「今すぐ聞く」ワンショット再生なのに対し、`moca-notify` は
+**購読中のブラウザに通知を届ける** pub/sub 用のクライアント。管理画面ヘッダー右上の
+メガホントグルを ON にしておくと、`POST /notify` に届いたテキストを宮舞モカが
+その場で読み上げる (`/analyze` は経由せず素の朗読、低レイテンシ)。永続化されない
+fire-and-forget なので、誰も購読していなければ捨てられる。`MOCA_URL` は `moca` と共有する。
+
+```sh
+# インストール (クライアント側)
+curl -o ~/bin/moca-notify https://raw.githubusercontent.com/miyabisun/moca-server/main/bin/moca-notify
+chmod +x ~/bin/moca-notify
+
+moca-notify "ビルドが完了しました"     # 引数で本文を渡す
+echo "5分経過しました" | moca-notify   # stdin からも可
+```
+
+用途は「ssh ログイン先の tmux でベルが鳴ったら手元のブラウザで読み上げる」等。
+tmux 連携例 (1 行):
+
+```tmux
+set-hook -g alert-bell 'run-shell "moca-notify \"#{session_name} が待ってます\""'
+```
+
+dotfiles 側の hook 実装本体は moca-server のスコープ外 (サーバーは「テキストを受けて
+購読中の SPA に音声で届ける」だけを担当する)。
+
 ## 環境変数
 
 サーバー側は `.env`（`.env.example` からコピー）または直接 export で設定する。Bun は起動時に `.env` を自動で読み込む。
@@ -123,7 +153,7 @@ curl -sN --data-binary "テキスト" http://localhost:3000/say | ffplay -nodisp
 |---|---|---|
 | `PORT` | `3000` | サーバーの待受ポート |
 | `DATABASE_PATH` | `./moca.db` | SQLite ファイルの場所。絶対パス推奨。相対パスは起動ディレクトリ基準 |
-| `VOICEPEAK` | `voicepeak` | voicepeak バイナリのパス (`bin/moca-render`)。PATH に通してあれば `voicepeak` のままで良い |
+| `VOICEPEAK` | `voicepeak` | voicepeak バイナリの**絶対パス** (`bin/moca-render`)。VOICEPEAK は単一バイナリではなく `dic/` `fonts/` `settings/` 等の兄弟ディレクトリを起動時に参照するため、インストール先 (例: `~/tools/Voicepeak/voicepeak`) をそのまま指定する。PATH に通したいなら `~/.local/bin/voicepeak` にラッパースクリプトを置いて `exec $HOME/tools/Voicepeak/voicepeak "$@"` させる方式が確実 |
 | `MOCA_NARRATOR` | `Miyamai Moca` | ナレーター名 (`bin/moca-render`)。VOICEPEAK にインストール済みの音源名を指定 |
 | `MOCA_URL` | `http://localhost:3000` | サーバーの URL (クライアント `bin/moca` が参照) |
 | `ANALYZE_BACKEND` | `none` | 感情分析の実行方式。`none` (無効) / `cli` (任意の LLM CLI) / `openai` (OpenAI 互換 API) |

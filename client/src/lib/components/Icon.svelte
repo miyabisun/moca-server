@@ -41,6 +41,13 @@
 	{:else if name === 'grip'}
 		<line x1="4" y1="9" x2="20" y2="9" />
 		<line x1="4" y1="15" x2="20" y2="15" />
+	{:else if name === 'megaphone'}
+		<path d="m3 11 18-5v12L3 14v-3z" />
+		<path d="M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+	{:else if name === 'megaphone-off'}
+		<path d="M9.26 9.26 3 11v3l14 4v-2.34" />
+		<path d="M21 15V6l-6.5 1.86M11.6 16.8a3 3 0 1 1-5.8-1.6" />
+		<line x1="2" y1="2" x2="22" y2="22" />
 	{:else if name === 'grip-vertical'}
 		<circle cx="9" cy="5" r="1" />
 		<circle cx="9" cy="12" r="1" />

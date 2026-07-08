@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/bun'
 import { logger } from 'hono/logger'
+import { streamSSE } from 'hono/streaming'
+import type { SSEStreamingApi } from 'hono/streaming'
 import { MOCA_FORMAT, wavHeader } from './wav.js'
 import { ScriptError, validateScript, toJsonl } from './script.js'
 import { AnalyzeError, createAnalyzerFromEnv } from './analyze.js'
@@ -39,6 +41,10 @@ export function createApp({
 }: CreateAppOptions = {}): Hono {
   const app = new Hono()
   const resolvedAnalyzer = analyzer ?? createAnalyzerFromEnv()
+
+  // 通知購読者の集合。/notify/stream 接続ごとに add し、切断で delete する。
+  // 永続化しない fire-and-forget: 購読者ゼロなら通知は捨てられる。
+  const subscribers = new Set<SSEStreamingApi>()
 
   app.use(logger())
 
@@ -142,6 +148,38 @@ export function createApp({
       },
     })
   })
+
+  // 通知 pub/sub。tmux などの外部イベントを text/plain で受け、購読中の全 SPA に
+  // SSE で broadcast する。永続化・再送・認証はしない (LAN 前提の fire-and-forget)。
+  app.post('/notify', async (c) => {
+    const text = await c.req.text()
+    if (!text.trim()) return c.text('text required', 400)
+    for (const stream of subscribers) {
+      // 個別の書き込み失敗 (切断直後など) が他の購読者を巻き込まないよう握りつぶす
+      await stream.writeSSE({ data: text }).catch(() => {})
+    }
+    return c.body(null, 204)
+  })
+
+  app.get('/notify/stream', (c) =>
+    streamSSE(c, async (stream) => {
+      subscribers.add(stream)
+      stream.onAbort(() => {
+        subscribers.delete(stream)
+      })
+      try {
+        // heartbeat: アイドル切断 (LB / ブラウザ) を防ぐコメント行を 15 秒ごとに送る。
+        // コールバックが解決するとストリームが閉じるため、abort までここで保持する。
+        while (!stream.aborted) {
+          await stream.sleep(15000)
+          if (stream.aborted) break
+          await stream.write(': ping\n\n')
+        }
+      } finally {
+        subscribers.delete(stream)
+      }
+    }),
+  )
 
   // プロジェクト / 行 / 流し込みの CRUD API (全て /api プレフィクス)
   app.route('/', projects)

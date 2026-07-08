@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# moca-notify — 通知テキストを moca-server に投げる薄いラッパー。
+# 購読中 (ヘッダーのメガホン ON) の SPA から宮舞モカが読み上げる。
+# 永続化されない fire-and-forget: 購読者がいなければ捨てられる。
+#
+# 使い方:
+#   moca-notify "ビルドが終わりました"     # 引数で本文を渡す
+#   echo "..." | moca-notify              # stdin からも可
+#
+# tmux 連携例 (dotfiles 側の hook 本体はスコープ外):
+#   set-hook -g alert-bell 'run-shell "moca-notify \"#{session_name} が待ってます\""'
+#
+# 環境変数:
+#   MOCA_URL — moca-server の URL (bin/moca と共有。デフォルト: http://localhost:3000)
+set -euo pipefail
+
+URL="${MOCA_URL:-http://localhost:3000}"
+
+input="${*:-$(cat)}"
+if [ -z "${input// /}" ]; then
+  echo "usage: moca-notify <text>  (または stdin からテキストを渡す)" >&2
+  exit 2
+fi
+
+# 204 No Content が返るので出力は無い。-f で HTTP エラー時に非ゼロ終了する。
+printf '%s' "$input" | curl -sf -X POST -H 'content-type: text/plain' --data-binary @- "$URL/notify"

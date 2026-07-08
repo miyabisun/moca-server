@@ -4,12 +4,12 @@ name: Sumi / moca-server
 description: >
   moca-server project overrides for the Sumi design system. The canonical
   template lives at ~/.claude/designs/sumi/DESIGN.md; this file records
-  ONLY what is specific to moca-server (accent + emotion data colors +
-  domain components for the script-production workspace). CSS custom
-  properties in client/src/global.sass are the implementation of these
-  tokens.
+  ONLY what is specific to moca-server (primary + secondary accents +
+  emotion data colors + domain components for the script-production
+  workspace). CSS custom properties in client/src/global.sass are the
+  implementation of these tokens.
 colors:
-  # --- Project accent (mocha brown) ---
+  # --- Project primary accent (mocha brown) ---
   # Unsuffixed = Washi theme (light), -dark = Sumi theme (dark).
   # Mocha: the tool is named after 宮舞モカ. Deliberately desaturated
   # coffee brown so it never reads as 5ch-viewer's vivid amber
@@ -25,14 +25,26 @@ colors:
   # use this deepened mocha instead (white text ≥ 5.5:1). Washi primary
   # buttons keep using accent unchanged.
   accent-strong-dark: "#8a5a3c"
+  # --- Project secondary accent (emerald green) ---
+  # 宮舞モカのハイライトカラー。公式イラストの髪色から取ったエメラルド。
+  # Role: "alive / subscribed / on-air" — a persistent state that runs
+  # in the background of a screen while the user does something else
+  # (currently the notification-subscribe toggle). Distinct from primary
+  # (foreground of intent). Doyaru's emotion color is unified with this
+  # hue (see below): モカちゃんの落ち着いた透き通った声 = ドヤ = 彼女の色。
+  secondary: "#2a9d6e"
+  secondary-subtle: "rgba(42, 157, 110, 0.12)"
+  secondary-dark: "#4dd6a1"
+  secondary-subtle-dark: "rgba(77, 214, 161, 0.15)"
   # --- Functional data colors: the five emotion axes ---
   # One hue per VOICEPEAK emotion axis. Washi values are darkness-ramp
   # inks (read as ink first, hue second); Sumi values are muted pastels
   # readable on surface-raised-dark.
   emo-bosoboso: "#4a5248"
   emo-bosoboso-dark: "rgba(150, 168, 152, 0.85)"
-  emo-doyaru: "#5a3a7e"
-  emo-doyaru-dark: "rgba(186, 148, 230, 0.85)"
+  # doyaru is intentionally the same hue as secondary — see Colors below.
+  emo-doyaru: "#2a9d6e"
+  emo-doyaru-dark: "rgba(77, 214, 161, 0.85)"
   emo-honwaka: "#8a5a20"
   emo-honwaka-dark: "rgba(240, 190, 120, 0.85)"
   emo-angry: "#8f2222"
@@ -47,7 +59,7 @@ colors:
 
 **This project follows the Sumi design system.** The canonical template is
 `~/.claude/designs/sumi/DESIGN.md` — all shared rules (neutral chrome,
-one-accent rule, scales, flat elevation, iconography, component recipes)
+accent rules, scales, flat elevation, iconography, component recipes)
 live there and are NOT restated here. This document records only what is
 unique to moca-server. On chrome questions the template wins; on the
 domain semantics below this file wins.
@@ -58,11 +70,19 @@ or an emotion-annotated script, and the produced artifact is the script
 JSON — not the audio. The user's loop is: pour text in → listen → nudge
 emotion → listen again. The UI must make that loop one-tap tight.
 
-Accent: **mocha brown** (`#6b4632` Washi / `#c9a086` Sumi). A quiet,
-coffee-toned brown fitting the calm narration voice this tool exists for.
-It marks interactive chrome only: active tabs, the one primary button per
-screen, focused inputs, the shared focus ring, and the currently-playing
-line indicator.
+Primary accent: **mocha brown** (`#6b4632` Washi / `#c9a086` Sumi). A
+quiet, coffee-toned brown fitting the calm narration voice this tool
+exists for. It marks interactive chrome only: active tabs, the one
+primary button per screen, focused inputs, the shared focus ring, and
+the currently-playing line indicator.
+
+Secondary accent: **emerald green** (`#2a9d6e` Washi / `#4dd6a1` Sumi).
+Taken from 宮舞モカ's own hair color — her hallmark hue. Its role is
+strictly *persistent "alive" state* that runs in the background while
+the user does something else: currently, the notification-subscribe
+toggle in the header (ON = 購読中). Primary owns "the next action";
+secondary owns "this switch is still on". They must never fight for the
+same region — a screen may show both because they mean different things.
 
 Themes follow the family's Sumi-first convention: `:root` in
 `client/src/global.sass` IS the Sumi (dark) theme, and Washi (light,
@@ -128,10 +148,21 @@ The five emotion axes are the project's functional data colors. Each axis
 owns one hue, monosemous across the app:
 
 - **bosoboso — moss gray** (`#4a5248` / `rgba(150,168,152,0.85)`): 陰気
-- **doyaru — violet** (`#5a3a7e` / `rgba(186,148,230,0.85)`): ドヤ
+- **doyaru — emerald** (`#2a9d6e` / `rgba(77,214,161,0.85)`): ドヤ
 - **honwaka — warm peach** (`#8a5a20` / `rgba(240,190,120,0.85)`): ほんわか
 - **angry — red** (`#8f2222` / `rgba(235,120,110,0.85)`): 怒り
 - **teary — blue** (`#1f4e8c` / `rgba(120,170,235,0.85)`): 涙声
+
+**doyaru's hue is intentionally the same emerald green as the project's
+secondary accent** — モカちゃんの落ち着いた透き通った声 = 彼女のドヤ =
+彼女自身の色。This is a deliberate three-way unification (character
+identity ⇔ signature emotion ⇔ persistent-alive state), not a token
+collision. The single hue appears in three functionally distinct
+contexts: the secondary token colors chrome (subscribe toggle ON),
+`emo-doyaru` colors data (doyaru slider fill + chip). The template's
+"emotion colors never color chrome" rule still holds — chrome uses the
+`secondary` token, data uses the `emo-doyaru` token. They just happen
+to resolve to the same color.
 
 An emotion color appears in exactly two places: the fill of that axis's
 slider, and that axis's value chip on a line row. Emotion colors never
@@ -158,10 +189,16 @@ piece of shared chrome:
 
 - **App header:** a thin full-width band (a slim bar, visibly lighter
   presence than the panes — surface-raised, 1px hairline bottom border)
-  holding the site title 「宮舞モカ 台本工房」 in label type, muted,
-  and the app's only navigation: two Sumi-recipe tabs, 台本 (the
-  two-pane workspace) and 辞書 (the reading dictionary). Nothing else
-  lives here; the band never competes with the workspace below.
+  that carries the always-on chrome the workspace can't. Currently
+  that's the site title 「宮舞モカ 台本工房」 in label type (muted),
+  the tab navigation for the two Sumi-recipe screens (台本 for the
+  two-pane workspace, 辞書 for the reading dictionary), and — flushed
+  to the far right — the **notification-subscribe megaphone toggle**
+  (see Components). Nothing else has earned a spot here yet; when
+  something eventually does, it goes here because the header is the
+  natural home for app-global state, not because the header is the
+  only place chrome is allowed. The bar stays visually quieter than
+  the workspace so the panes below remain the primary reading surface.
 - **List pane: projects.** Card rows — project name (label type), line
   count and updated-at (caption muted). The one primary button here is
   「新規プロジェクト」.
@@ -252,6 +289,26 @@ Domain components on top of the Sumi recipes:
   lines with a danger-role caption, never lost.
 - **Destructive actions** (project delete, line delete, 再分析,
   演技→アナ toggle) route through ConfirmModal per the template.
+- **Notification-subscribe megaphone (app header, far right):** a
+  template quiet icon-button toggling an app-global subscription to
+  server-pushed notifications (POST /notify → SSE broadcast). OFF
+  (muted): megaphone-off SVG in `muted` color. ON (subscribed):
+  megaphone SVG in `secondary` (Washi) / `secondary-dark` (Sumi) with
+  a slow opacity breathing (~2s, 0.6→1.0→0.6; suspended when
+  `prefers-reduced-motion: reduce` is set — the color-only state still
+  conveys ON). Clicking OFF→ON both opens the SSE stream *and*
+  synchronously calls `new Audio().play().catch(()=>{})` inside the same
+  handler to satisfy autoplay policies (Safari requires the play() to
+  originate from the user gesture). Received text is played via a
+  private HTMLAudioElement pointed at `/say` (text/plain, no
+  /analyze — notifications are read plain for latency); it is
+  **independent from the line-player** and may sound simultaneously
+  with a running line or radio playback — script-listening and
+  notification-listening are separate concerns, so the template's
+  "exactly one line sounds at a time" rule scopes to the line-player
+  only. If notifications pile up, they are played serially in FIFO;
+  no queue cap is enforced (fire-and-forget delivery in the server
+  guarantees the queue only holds arrivals-since-subscribe).
 
 ## Do's and Don'ts
 
