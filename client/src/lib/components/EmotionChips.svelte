@@ -26,7 +26,7 @@
 
 .chip
 	padding: 1px var(--sp-2)
-	border-radius: var(--radius-full)
+	border-radius: var(--radius-sm)
 	font-size: var(--fs-xs)
 	line-height: 1.5
 	white-space: nowrap

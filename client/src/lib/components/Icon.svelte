@@ -3,7 +3,7 @@
 	// Play/stop are solid glyphs (fill) per DESIGN.md; the rest are stroked.
 	let { name } = $props();
 
-	const solid = name === 'play' || name === 'stop';
+	const solid = $derived(name === 'play' || name === 'stop');
 </script>
 
 <svg

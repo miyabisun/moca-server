@@ -70,8 +70,4 @@ export async function analyzeLine(text) {
 
 // --- Playback source URLs (audio is synthesized on demand by /say) ---
 export const sayTextUrl = (text) => `/say?text=${encodeURIComponent(text)}`;
-export const sayScriptRequest = (script) => ({
-	method: 'POST',
-	headers: { 'Content-Type': 'application/json' },
-	body: JSON.stringify(script)
-});
+export const sayScriptRequest = (script) => json('POST', script);
