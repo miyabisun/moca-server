@@ -18,20 +18,33 @@ export const addLine = (projectId, line) =>
 	fetcher(`/api/projects/${projectId}/lines`, json('POST', line));
 export const updateLine = (id, patch) => fetcher(`/api/lines/${id}`, json('PATCH', patch));
 export const deleteLine = (id) => fetcher(`/api/lines/${id}`, json('DELETE'));
+// Duplicate a line (mode + script included), inserting the copy directly below.
+export const duplicateLine = (id) => fetcher(`/api/lines/${id}/duplicate`, json('POST'));
 export const reorderLines = (projectId, order) =>
 	fetcher(`/api/projects/${projectId}/lines/order`, json('PUT', { order }));
 
+// --- Dictionary (reading dictionary; applied at synthesis only) ---
+export const listDict = () => fetcher('/api/dictionary');
+export const createDict = (surface, reading) =>
+	fetcher('/api/dictionary', json('POST', { surface, reading }));
+export const deleteDict = (id) => fetcher(`/api/dictionary/${id}`, json('DELETE'));
+
 // --- Import ---
-// Announcer mode: fast, returns { mode, created }.
-export const importAnnouncer = (projectId, text) =>
-	fetcher(`/api/projects/${projectId}/import`, json('POST', { mode: 'announcer', text }));
+// Announcer mode: fast, returns { mode, created }. `afterLineId` (optional)
+// inserts the new lines directly after that line; omit it to append at the end.
+export const importAnnouncer = (projectId, text, afterLineId) =>
+	fetcher(
+		`/api/projects/${projectId}/import`,
+		json('POST', { mode: 'announcer', text, after: afterLineId })
+	);
 
 // Acting mode: streams SSE progress. `onEvent({ index, total, status, line })` is
 // called per line, `onComplete({ total })` at the end. Returns a promise that
 // resolves when the stream ends. Aborting the AbortSignal stops it server-side.
-export async function importActing(projectId, text, { onEvent, onComplete, signal } = {}) {
+// `afterLineId` (optional) inserts directly after that line instead of appending.
+export async function importActing(projectId, text, { onEvent, onComplete, signal, afterLineId } = {}) {
 	const res = await fetch(`/api/projects/${projectId}/import`, {
-		...json('POST', { mode: 'acting', text }),
+		...json('POST', { mode: 'acting', text, after: afterLineId }),
 		signal
 	});
 	if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
@@ -69,5 +82,8 @@ export async function analyzeLine(text) {
 }
 
 // --- Playback source URLs (audio is synthesized on demand by /say) ---
-export const sayTextUrl = (text) => `/say?text=${encodeURIComponent(text)}`;
+// `raw` skips the reading dictionary (used by the 辞書 preview, which speaks a
+// reading string verbatim so it isn't substituted again).
+export const sayTextUrl = (text, raw = false) =>
+	`/say?text=${encodeURIComponent(text)}${raw ? '&raw=1' : ''}`;
 export const sayScriptRequest = (script) => json('POST', script);

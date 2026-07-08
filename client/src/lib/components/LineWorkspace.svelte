@@ -15,6 +15,7 @@
 		onreorder,
 		ontoggle,
 		onrequestDelete,
+		onmenu,
 		onpourin
 	} = $props();
 
@@ -109,6 +110,7 @@
 					{onsave}
 					{ontoggle}
 					{onrequestDelete}
+					{onmenu}
 					ondragstart={onDragStart}
 					ondragover={onDragOver}
 					ondrop={onDrop}

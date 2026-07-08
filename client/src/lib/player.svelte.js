@@ -100,7 +100,7 @@ async function startLine(line) {
 			if (my !== token) return;
 			el.src = objectUrl;
 		} else {
-			el.src = sayTextUrl(line.text);
+			el.src = sayTextUrl(line.text, line.raw);
 		}
 		playingId = line.id;
 		await el.play();

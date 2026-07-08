@@ -7,7 +7,9 @@
 	// Pour-in modal: large textarea + アナウンサー(default)/演技 segmented control.
 	// 演技 mode shows per-line analyze progress over SSE; failed lines are noted
 	// but never lost (saved as announcer server-side).
-	let { projectId, onclose, ondone } = $props();
+	// `afterLineId` (optional): insert new lines directly after that line. Omitted
+	// (footer 台本追加) means append at the end.
+	let { projectId, afterLineId = undefined, onclose, ondone } = $props();
 
 	let text = $state('');
 	let mode = $state('announcer');
@@ -29,12 +31,13 @@
 		failedCount = 0;
 		try {
 			if (mode === 'announcer') {
-				const res = await importAnnouncer(projectId, body);
+				const res = await importAnnouncer(projectId, body, afterLineId);
 				addToast(`${res.created.length} 行を追加しました`);
 			} else {
 				controller = new AbortController();
 				await importActing(projectId, body, {
 					signal: controller.signal,
+					afterLineId,
 					onEvent: (e) => {
 						progress = { index: e.index, total: e.total };
 						if (e.status === 'failed') failedCount++;

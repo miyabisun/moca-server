@@ -7,6 +7,8 @@ import { AnalyzeError, analyzeText, defaultAnalyzeCmd } from './analyze.js'
 import { getIndexHtml as realGetIndexHtml } from './lib/spa.js'
 import projects from './routes/projects.js'
 import lines from './routes/lines.js'
+import dictionary from './routes/dictionary.js'
+import { applyDictionary, loadDictionary } from './dictionary.js'
 
 export interface CreateAppOptions {
   // プレーンテキスト合成コマンド。テキストを stdin で受け取り、生PCM (s16le/48k/mono) を stdout に吐く
@@ -74,6 +76,8 @@ export function createApp({
       c.req.method === 'POST' &&
       (c.req.header('content-type') ?? '').includes('application/json')
 
+    // 読み替え辞書は合成時のみ適用する入力前処理。マスターテキストは書き換えない。
+    // (/analyze は一切適用しない = 原文を読む)。実際に適用する経路でのみロードする。
     if (isJson) {
       let script
       try {
@@ -83,13 +87,16 @@ export function createApp({
         return c.text(msg, 400)
       }
       cmd = renderCmd
-      stdin = toJsonl(script)
+      const entries = loadDictionary()
+      stdin = toJsonl(script.map((seg) => ({ ...seg, text: applyDictionary(seg.text, entries) })))
     } else {
       const text =
         c.req.method === 'POST' ? await c.req.text() : (c.req.query('text') ?? '')
       if (!text.trim()) return c.text('text required', 400)
       cmd = sayCmd
-      stdin = text
+      // ?raw=1 skips the dictionary: the 辞書 preview speaks a reading string
+      // verbatim so applying the dictionary to it can't double-substitute.
+      stdin = c.req.query('raw') ? text : applyDictionary(text, loadDictionary())
     }
 
     // 前の合成が終わるまで待ってから自分の合成を始める
@@ -136,6 +143,7 @@ export function createApp({
   // プロジェクト / 行 / 流し込みの CRUD API (全て /api プレフィクス)
   app.route('/', projects)
   app.route('/', lines)
+  app.route('/', dictionary)
 
   // 管理画面 SPA: /assets/* は静的配信、それ以外の非API GET は index.html にフォールバック
   app.use('/assets/*', serveStatic({ root: staticRoot }))

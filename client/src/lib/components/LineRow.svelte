@@ -4,11 +4,12 @@
 	import EmotionChips from '$lib/components/EmotionChips.svelte';
 	import EmotionEditor from '$lib/components/EmotionEditor.svelte';
 
-	// One line row, left to right: drag grip, play button, line text (inline
-	// editable), emotion chips (acting only), mode toggle badge, delete button.
-	// Clicking the text swaps it in place for an input[type=text]; on a 演技 line
-	// it also expands the inline emotion editor. The playing row shows a 4px
-	// accent left bar.
+	// One line row, left to right: drag grip, play button, line text (immutable in
+	// place), emotion chips (acting only), mode toggle badge, delete button.
+	// Clicking the card toggles the inline emotion editor on a 演技 line and does
+	// nothing on an アナウンサー line — the card click is never an edit affordance.
+	// All text operations live in the line context menu (right-click / long-press).
+	// The playing row shows a 4px accent left bar.
 	let {
 		line,
 		rev = 0,
@@ -23,6 +24,7 @@
 		onsave,
 		ontoggle,
 		onrequestDelete,
+		onmenu,
 		ondragstart,
 		ondragover,
 		ondrop,
@@ -32,47 +34,49 @@
 	let expanded = $state(false);
 	let rowDraggable = $state(false);
 
-	// --- Inline text edit: the text swaps in place for an input, no layout jump.
-	// Enter / blur commit (trim; ignore empty or unchanged), Esc restores. ---
-	let editing = $state(false);
-	let draft = $state('');
-
 	function saveScript(script) {
 		onsave?.(line, { script });
 	}
 
-	function startEdit() {
-		if (editing) return;
-		draft = line.text;
-		editing = true;
-		// 演技: tapping the text also expands the emotion editor inline.
-		if (line.mode === 'acting') expanded = true;
+	// Card click toggles the emotion editor on 演技 lines only; アナウンサー = no-op.
+	function toggleExpand() {
+		if (line.mode === 'acting') expanded = !expanded;
 	}
 
-	function focusInput(node) {
-		node.focus();
-		node.select?.();
+	// --- Context menu: right-click and long-press both open the line menu. The
+	// browser context menu is intercepted on the card only (elsewhere it stays). ---
+	function openMenu(e) {
+		e.preventDefault();
+		onmenu?.(line);
 	}
 
-	function commitEdit() {
-		if (!editing) return;
-		editing = false;
-		const t = draft.trim();
-		if (t && t !== line.text) onsave?.(line, { text: t });
-	}
-
-	function cancelEdit() {
-		editing = false; // draft is discarded; text falls back to line.text
-	}
-
-	function onInputKey(e) {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			commitEdit();
-		} else if (e.key === 'Escape') {
-			e.preventDefault();
-			cancelEdit();
+	// Long-press (touch): ~500ms hold on the card fires the menu. Movement or an
+	// early release cancels it. The grip is excluded so it never fights the drag.
+	let pressTimer = null;
+	function clearPress() {
+		if (pressTimer) {
+			clearTimeout(pressTimer);
+			pressTimer = null;
 		}
+	}
+	function onPointerDown(e) {
+		if (e.pointerType === 'mouse') return; // right-click handles mouse
+		clearPress();
+		pressTimer = setTimeout(() => {
+			pressTimer = null;
+			// Swallow the ghost click that the browser synthesizes on touchend right
+			// after the long-press — otherwise it lands on the just-opened menu's
+			// scrim and immediately closes it (menu unreachable on touch).
+			window.addEventListener(
+				'click',
+				(ev) => {
+					ev.stopPropagation();
+					ev.preventDefault();
+				},
+				{ capture: true, once: true }
+			);
+			onmenu?.(line);
+		}, 500);
 	}
 
 	// --- Drag: only the grip initiates it; the row is draggable only while held. ---
@@ -115,6 +119,7 @@
 	class:drop-before={dropBefore}
 	class:drop-after={dropAfter}
 	draggable={rowDraggable}
+	oncontextmenu={openMenu}
 	ondragstart={handleDragStart}
 	ondragover={handleDragOver}
 	ondrop={handleDrop}
@@ -145,20 +150,18 @@
 			{/if}
 		</button>
 
-		<div class="body">
-			{#if editing}
-				<input
-					class="text-input"
-					type="text"
-					bind:value={draft}
-					use:focusInput
-					onkeydown={onInputKey}
-					onblur={commitEdit}
-					aria-label="行テキスト"
-				/>
-			{:else}
-				<button type="button" class="text" onclick={startEdit}>{line.text}</button>
-			{/if}
+		<!-- Text area is the card-click / long-press target. Immutable in place. -->
+		<div
+			class="body"
+			class:clickable={line.mode === 'acting'}
+			role="presentation"
+			onclick={toggleExpand}
+			onpointerdown={onPointerDown}
+			onpointermove={clearPress}
+			onpointerup={clearPress}
+			onpointercancel={clearPress}
+		>
+			<div class="text">{line.text}</div>
 			{#if line.mode === 'acting'}
 				<EmotionChips script={line.script} />
 			{/if}
@@ -279,41 +282,20 @@
 	flex: 1
 	min-width: 0
 
-	// Display text: a full-width quiet button so it can enter inline edit on
-	// click without adding chrome. Two lines max, ellipsized.
+	// 演技 rows expand the editor on click; announcer rows are inert.
+	&.clickable
+		cursor: pointer
+
+	// Immutable display text: quiet, two lines max, ellipsized. No affordance.
 	.text
 		display: -webkit-box
 		width: 100%
-		margin: 0
-		padding: 0
-		background: transparent
-		border: none
 		color: var(--c-text)
-		font-family: inherit
 		font-size: var(--fs-sm)
 		line-height: 1.6
-		text-align: left
-		cursor: text
 		-webkit-line-clamp: 2
 		-webkit-box-orient: vertical
 		overflow: hidden
-
-	// Inline edit input: same box + typography as .text, swapped in place. The
-	// negative margins offset padding so glyphs stay put; the 1px border is left
-	// uncompensated so the element bounding box drifts at most 2px (padding 2px −
-	// margin 2px + border 1px), keeping both glyph and box within the 2px budget.
-	.text-input
-		display: block
-		width: 100%
-		margin: -1px -2px
-		padding: 0 2px
-		background: var(--c-bg)
-		border: 1px solid var(--c-accent)
-		border-radius: var(--radius-sm)
-		color: var(--c-text)
-		font-family: inherit
-		font-size: var(--fs-sm)
-		line-height: 1.6
 
 // Mode toggle: a real button that stays as quiet as an outline badge —
 // affordance is cursor + hover wash only, no weight or fill change.

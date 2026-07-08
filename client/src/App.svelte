@@ -3,6 +3,9 @@
 	import LineWorkspace from '$lib/components/LineWorkspace.svelte';
 	import PourInModal from '$lib/components/PourInModal.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
+	import LineContextMenu from '$lib/components/LineContextMenu.svelte';
+	import TextEditModal from '$lib/components/TextEditModal.svelte';
+	import DictionaryView from '$lib/components/DictionaryView.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import * as api from '$lib/api.js';
 	import { play, playAll, stop, player } from '$lib/player.svelte.js';
@@ -11,9 +14,15 @@
 	let projects = $state(null);
 	let selectedId = $state(null);
 	let selected = $state(null); // full project detail with lines
-	// Pour-in modal open flag. New lines always append at the end of the project.
+	// Which top-level view is active. 台本 = two-pane workspace, 辞書 = dictionary.
+	let activeTab = $state('script');
+	// Pour-in modal state. `afterLineId` inserts after that line; null = append end.
 	let pourIn = $state(false);
+	let pourInAfter = $state(null);
 	let confirm = $state(null); // { kind, target, busy }
+	// Line context menu / text edit targets (null = closed).
+	let menuLine = $state(null);
+	let textEditLine = $state(null);
 	// Per-line editor revision. Bumped ONLY when a mode toggle re-seeds a script so
 	// the inline editor remounts from the fresh server script; autosave reloads
 	// must not bump it, or an open editor would reset mid-edit.
@@ -172,13 +181,39 @@
 		}
 	};
 
-	// Pour-in (append new lines at the end of the project).
+	// Pour-in from the footer: append at the end (no afterLineId).
 	function openPourIn() {
+		pourInAfter = null;
 		pourIn = true;
 	}
 
 	async function onPourInDone() {
 		await Promise.all([loadSelected(), loadProjects()]);
+	}
+
+	// --- Line context menu (right-click / long-press) and its actions ---
+	function openLineMenu(line) {
+		menuLine = line;
+	}
+
+	// 台本追加 (menu): open pour-in inserting directly after this line.
+	function menuAddAfter(line) {
+		pourInAfter = line.id;
+		pourIn = true;
+	}
+
+	async function commitTextEdit(text) {
+		if (!textEditLine) return;
+		await saveLine(textEditLine, { text });
+	}
+
+	async function duplicateLine(line) {
+		try {
+			await api.duplicateLine(line.id);
+			await loadSelected();
+		} catch (e) {
+			addToast(`複製に失敗しました: ${e.message}`, 'danger');
+		}
 	}
 
 	$effect(() => {
@@ -189,46 +224,83 @@
 <div class="app">
 	<header class="app-header">
 		<span class="site-title">宮舞モカ 台本工房</span>
+		<nav class="tabs">
+			<button type="button" class:active={activeTab === 'script'} onclick={() => (activeTab = 'script')}>
+				台本
+			</button>
+			<button type="button" class:active={activeTab === 'dict'} onclick={() => (activeTab = 'dict')}>
+				辞書
+			</button>
+		</nav>
 	</header>
 
-	<div class="layout">
-		<aside class="list-pane">
-			<ProjectList
-				{projects}
-				{selectedId}
-				radioProjectId={player.radioProjectId}
-				onselect={selectProject}
-				oncreate={createProject}
-				onplayall={onPlayAll}
-				onrequestDelete={requestDeleteProject}
-			/>
-		</aside>
-		<main class="detail-pane">
-			{#if selected}
-				<LineWorkspace
-					project={selected}
-					{editorRev}
-					{toggleBusy}
-					onrename={renameProject}
-					{onplay}
-					onsave={saveLine}
-					onreorder={reorderLines}
-					ontoggle={toggleMode}
-					onrequestDelete={requestDeleteLine}
-					onpourin={openPourIn}
+	{#if activeTab === 'script'}
+		<div class="layout">
+			<aside class="list-pane">
+				<ProjectList
+					{projects}
+					{selectedId}
+					radioProjectId={player.radioProjectId}
+					onselect={selectProject}
+					oncreate={createProject}
+					onplayall={onPlayAll}
+					onrequestDelete={requestDeleteProject}
 				/>
-			{:else}
-				<div class="placeholder">プロジェクトを選択してください。</div>
-			{/if}
+			</aside>
+			<main class="detail-pane">
+				{#if selected}
+					<LineWorkspace
+						project={selected}
+						{editorRev}
+						{toggleBusy}
+						onrename={renameProject}
+						{onplay}
+						onsave={saveLine}
+						onreorder={reorderLines}
+						ontoggle={toggleMode}
+						onrequestDelete={requestDeleteLine}
+						onmenu={openLineMenu}
+						onpourin={openPourIn}
+					/>
+				{:else}
+					<div class="placeholder">プロジェクトを選択してください。</div>
+				{/if}
+			</main>
+		</div>
+	{:else}
+		<main class="dict-view">
+			<DictionaryView />
 		</main>
-	</div>
+	{/if}
 </div>
 
 {#if pourIn && selected}
 	<PourInModal
 		projectId={selected.id}
-		onclose={() => (pourIn = false)}
+		afterLineId={pourInAfter}
+		onclose={() => {
+			pourIn = false;
+			pourInAfter = null;
+		}}
 		ondone={onPourInDone}
+	/>
+{/if}
+
+{#if menuLine}
+	{@const line = menuLine}
+	<LineContextMenu
+		onclose={() => (menuLine = null)}
+		onadd={() => menuAddAfter(line)}
+		onedit={() => (textEditLine = line)}
+		onduplicate={() => duplicateLine(line)}
+	/>
+{/if}
+
+{#if textEditLine}
+	<TextEditModal
+		text={textEditLine.text}
+		onclose={() => (textEditLine = null)}
+		oncommit={commitTextEdit}
 	/>
 {/if}
 
@@ -253,11 +325,12 @@
 	grid-template-rows: auto 1fr
 	height: 100dvh
 
-// Identity chrome only: a thin surface-raised band with the site title. No
-// navigation, no actions, no shadow.
+// A thin surface-raised band with the site title and the app's only navigation:
+// the 台本 / 辞書 tabs. No actions, no shadow.
 .app-header
 	display: flex
 	align-items: center
+	gap: var(--sp-5)
 	padding: var(--sp-2) var(--sp-4)
 	background: var(--c-surface)
 	border-bottom: 1px solid var(--c-border)
@@ -266,6 +339,29 @@
 	font-size: var(--fs-md)
 	font-weight: 500
 	color: var(--c-text-muted)
+
+// Sumi tab recipe: label-type, muted when inactive; active adds on-surface text
+// and a 2px accent underline — no background change.
+.tabs
+	display: flex
+	gap: var(--sp-4)
+
+	button
+		padding: var(--sp-1) 0
+		background: transparent
+		border: none
+		border-bottom: 2px solid transparent
+		color: var(--c-text-sub)
+		font-family: inherit
+		font-size: var(--fs-sm)
+		cursor: pointer
+
+		&:hover
+			color: var(--c-text)
+
+		&.active
+			color: var(--c-text)
+			border-bottom-color: var(--c-accent)
 
 .layout
 	display: grid
@@ -284,6 +380,10 @@
 		border-bottom: 1px solid var(--c-border)
 
 .detail-pane
+	min-height: 0
+	overflow: hidden
+
+.dict-view
 	min-height: 0
 	overflow: hidden
 

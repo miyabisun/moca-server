@@ -23,4 +23,13 @@ export function init() {
     )
   `)
   db.run(sql`CREATE INDEX IF NOT EXISTS lines_project_position_idx ON lines(project_id, position)`)
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS dictionary (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      surface TEXT NOT NULL,
+      reading TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `)
+  db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS dictionary_surface_idx ON dictionary(surface)`)
 }

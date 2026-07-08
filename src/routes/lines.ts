@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { eq, max } from 'drizzle-orm'
+import { eq, and, gt, max, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { projects, lines } from '../db/schema.js'
 import { ScriptError, validateScript } from '../script.js'
@@ -96,6 +96,36 @@ app.patch('/api/lines/:id', async (c) => {
   return c.json(serializeLine(row))
 })
 
+// 行複製。mode/text/script ごとコピーして対象行の直下 (position+1) に挿入する。
+// 感情パラメータの A/B 比較用。挿入前に後続 position を +1 シフトする。
+app.post('/api/lines/:id/duplicate', (c) => {
+  const id = Number(c.req.param('id'))
+  if (Number.isNaN(id)) return c.json({ error: 'invalid id' }, 400)
+
+  const line = db.select().from(lines).where(eq(lines.id, id)).get()
+  if (!line) return c.json({ error: 'not found' }, 404)
+
+  const row = db.transaction((tx) => {
+    tx.update(lines)
+      .set({ position: sql`${lines.position} + 1` })
+      .where(and(eq(lines.project_id, line.project_id), gt(lines.position, line.position)))
+      .run()
+    return tx
+      .insert(lines)
+      .values({
+        project_id: line.project_id,
+        position: line.position + 1,
+        mode: line.mode,
+        text: line.text,
+        script: line.script,
+      })
+      .returning()
+      .get()
+  })
+  touchProject(line.project_id)
+  return c.json(serializeLine(row), 201)
+})
+
 // 行削除
 app.delete('/api/lines/:id', (c) => {
   const id = Number(c.req.param('id'))
@@ -155,7 +185,23 @@ app.post('/api/projects/:id/import', async (c) => {
     .map((s) => s.trim())
     .filter(Boolean)
 
-  const startPos = nextPosition(projectId)
+  // `after` (行id) 指定時はその行の直後に挿入する。指定が無い / 他プロジェクトの行なら
+  // 現行どおり末尾追加 (完全後方互換)。挿入本数ぶん後続 position を +1 シフトしてから
+  // startPos = after行.position + 1 で詰める。
+  let startPos = nextPosition(projectId)
+  if (body.after != null && texts.length > 0) {
+    const afterId = Number(body.after)
+    const afterRow = Number.isNaN(afterId)
+      ? undefined
+      : db.select().from(lines).where(eq(lines.id, afterId)).get()
+    if (afterRow && afterRow.project_id === projectId) {
+      db.update(lines)
+        .set({ position: sql`${lines.position} + ${texts.length}` })
+        .where(and(eq(lines.project_id, projectId), gt(lines.position, afterRow.position)))
+        .run()
+      startPos = afterRow.position + 1
+    }
+  }
 
   if (mode === 'announcer') {
     if (texts.length === 0) return c.json({ mode, created: [] })

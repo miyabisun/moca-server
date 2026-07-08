@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 // プロジェクト = 台本行の順序付きリスト。音声は保持せず、テキストと台本JSONだけを持つ。
 export const projects = sqliteTable('projects', {
@@ -19,4 +19,15 @@ export const lines = sqliteTable('lines', {
   script: text('script'),
 }, (t) => ({
   projectPositionIdx: index('lines_project_position_idx').on(t.project_id, t.position),
+}))
+
+// 読み替え辞書 = 表記(surface) → 読み(reading) の対。合成時にのみ適用され、
+// マスターテキスト (lines.text / script) は決して書き換えない。surface は一意。
+export const dictionary = sqliteTable('dictionary', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  surface: text('surface').notNull(),
+  reading: text('reading').notNull(),
+  created_at: text('created_at').notNull().$defaultFn(() => new Date().toISOString()),
+}, (t) => ({
+  surfaceIdx: uniqueIndex('dictionary_surface_idx').on(t.surface),
 }))

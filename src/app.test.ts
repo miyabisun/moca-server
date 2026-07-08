@@ -1,5 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { eq } from 'drizzle-orm'
 import { createApp } from './app.js'
+import { db } from './db/index.js'
+import { dictionary, projects, lines } from './db/schema.js'
 import { MOCA_FORMAT, wavHeader } from './wav.js'
 
 // cat は stdin をそのまま stdout に返すので、合成エンジンの代役になる
@@ -105,6 +108,71 @@ describe('合成の直列化', () => {
       ),
     )
     expect(results).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('読み替え辞書の合成時適用', () => {
+  // 辞書は共有DBなので、他テスト (hello→hello 等) を汚さないよう毎回クリアする
+  beforeEach(() => db.delete(dictionary).run())
+  afterEach(() => db.delete(dictionary).run())
+
+  const addEntry = (surface: string, reading: string) =>
+    db.insert(dictionary).values({ surface, reading }).run()
+
+  test('/say(text) は読みに置換される (cat なので出力=置換後stdin)', async () => {
+    addEntry('GPU', 'ジーピーユー')
+    const res = await app.request('/say', { method: 'POST', body: 'このGPUは速い' })
+    expect(await bodyAfterHeader(res)).toBe('このジーピーユーは速い')
+  })
+
+  test('/say(json) は各 segment.text が置換される', async () => {
+    addEntry('ハード', 'はーど')
+    const res = await app.request('/say', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '[{"text":"ハードだ","emotion":{"honwaka":60}}]',
+    })
+    expect(await bodyAfterHeader(res)).toBe(
+      '{"text":"はーどだ","emotion":{"honwaka":60}}\n',
+    )
+  })
+
+  test('/say?raw=1 は辞書を適用しない (辞書プレビューは読みをそのまま発話)', async () => {
+    addEntry('GPU', 'ジーピーユー')
+    const res = await app.request('/say?text=' + encodeURIComponent('このGPUは速い') + '&raw=1')
+    expect(await bodyAfterHeader(res)).toBe('このGPUは速い')
+  })
+
+  test('/analyze は辞書を適用しない (原文が analyzer に届く)', async () => {
+    addEntry('GPU', 'ジーピーユー')
+    // analyzer の stdin に原表記 GPU が含まれていれば "orig"、置換されていれば "repl" を返す
+    const spy = createApp({
+      sayCmd: ['cat'],
+      renderCmd: ['cat'],
+      analyzeCmd: [
+        'sh',
+        '-c',
+        'if grep -q GPU; then echo \'[{"text":"orig"}]\'; else echo \'[{"text":"repl"}]\'; fi',
+      ],
+    })
+    const res = await spy.request('/analyze', { method: 'POST', body: 'このGPUは速い' })
+    const out = await res.json()
+    expect(out[0].text).toBe('orig') // 辞書適用されず原表記が届いた
+  })
+
+  test('置換後もDBの行 text は元表記のまま (マスター不変)', async () => {
+    addEntry('GPU', 'ジーピーユー')
+    const p = db.insert(projects).values({ name: 'dict' }).returning().get()
+    const line = db
+      .insert(lines)
+      .values({ project_id: p.id, position: 0, mode: 'announcer', text: 'このGPUは速い', script: null })
+      .returning()
+      .get()
+    await app.request('/say', { method: 'POST', body: line.text })
+    const reloaded = db.select().from(lines).where(eq(lines.id, line.id)).get()
+    expect(reloaded?.text).toBe('このGPUは速い')
+    db.delete(lines).where(eq(lines.project_id, p.id)).run()
+    db.delete(projects).where(eq(projects.id, p.id)).run()
   })
 })
 

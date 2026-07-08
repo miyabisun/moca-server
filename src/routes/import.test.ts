@@ -62,6 +62,38 @@ describe('import (announcer)', () => {
     expect(body.created.every((l: { script: null }) => l.script === null)).toBe(true)
     expect(body.created.map((l: { position: number }) => l.position)).toEqual([0, 1, 2])
   })
+
+  test('after 指定で対象行の直後に挿入され後続 position がずれる', async () => {
+    const { app, projectId } = await setup(['cat'])
+    const base = await (
+      await importText(app, projectId, { mode: 'announcer', text: 'A\nB\nC' })
+    ).json()
+    const afterId = base.created[0].id // A の直後に入れる
+
+    const res = await importText(app, projectId, {
+      mode: 'announcer',
+      text: 'X\nY',
+      after: afterId,
+    })
+    const inserted = await res.json()
+    expect(inserted.created.map((l: { position: number }) => l.position)).toEqual([1, 2])
+
+    const single = await (await app.request(`/api/projects/${projectId}`)).json()
+    expect(single.lines.map((l: { text: string }) => l.text)).toEqual(['A', 'X', 'Y', 'B', 'C'])
+    expect(single.lines.map((l: { position: number }) => l.position)).toEqual([0, 1, 2, 3, 4])
+  })
+
+  test('after が他プロジェクトの行なら末尾追加にフォールバック', async () => {
+    const { app, projectId } = await setup(['cat'])
+    await importText(app, projectId, { mode: 'announcer', text: 'A\nB' })
+    const res = await importText(app, projectId, {
+      mode: 'announcer',
+      text: 'Z',
+      after: 99999,
+    })
+    const inserted = await res.json()
+    expect(inserted.created[0].position).toBe(2) // 末尾
+  })
 })
 
 describe('import (acting)', () => {

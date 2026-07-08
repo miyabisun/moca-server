@@ -100,4 +100,26 @@ describe('lines CRUD', () => {
     })
     expect(res.status).toBe(400)
   })
+
+  test('複製は直下にコピー挿入され position が連続する', async () => {
+    const script = [{ text: 'やあ。', emotion: { angry: 80 } }]
+    const a = await (await addLine({ mode: 'acting', text: 'A', script })).json()
+    await addLine({ mode: 'announcer', text: 'B' })
+
+    const dup = await (
+      await app.request(`/api/lines/${a.id}/duplicate`, { method: 'POST' })
+    ).json()
+    expect(dup.text).toBe('A')
+    expect(dup.mode).toBe('acting')
+    expect(dup.script).toEqual(script)
+    expect(dup.position).toBe(1)
+
+    const single = await (await app.request(`/api/projects/${projectId}`)).json()
+    expect(single.lines.map((l: { text: string }) => l.text)).toEqual(['A', 'A', 'B'])
+    expect(single.lines.map((l: { position: number }) => l.position)).toEqual([0, 1, 2])
+  })
+
+  test('存在しない行の複製は 404', async () => {
+    expect((await app.request('/api/lines/99999/duplicate', { method: 'POST' })).status).toBe(404)
+  })
 })
