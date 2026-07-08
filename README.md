@@ -148,3 +148,9 @@ curl -sN --data-binary "テキスト" http://localhost:3000/say | ffplay -nodisp
   segment ごとに最大3回リトライする。
 - `/analyze` の消費（API 料金 / CLI サブスクリプション枠）は選択した backend の請求元にそのまま乗る。
 - 認証なしの家庭内 LAN 専用。インターネットに公開しないこと。
+
+## ライセンス
+
+本リポジトリのコード (moca-server 本体) は [MIT ライセンス](./LICENSE) の下で配布する。
+
+ただし本リポジトリは音声合成エンジン **VOICEPEAK 本体および音源データを一切含まない**。VOICEPEAK / 宮舞モカ (およびその他の音源) は AH-Software 株式会社の商用製品であり、その利用条件は同社のライセンスに従うこと。moca-server 側の MIT ライセンスは VOICEPEAK 本体には及ばない。
