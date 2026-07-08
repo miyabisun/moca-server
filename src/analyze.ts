@@ -1,6 +1,10 @@
 // テキスト → 台本JSON の生成ロジック。
 // /analyze ルートと、テキスト流し込み (演技モード) の両方から共有する。
-// 挙動は元の app.ts 内 /analyze と同一 (プロンプト・リトライ・smoothScript まで揃える)。
+//
+// backend は 3 種類 (ANALYZE_BACKEND で切替):
+//   - cli    … 任意の LLM CLI を Bun.spawn で起動。stdin=プロンプト, stdout=台本JSON
+//   - openai … OpenAI 互換の POST {base}/chat/completions を叩く
+//   - none   … /analyze を無効化。呼ばれたら AnalyzeError
 
 import { ScriptError, extractJson, smoothScript, validateScript } from './script.js'
 import type { Script } from './script.js'
@@ -26,9 +30,6 @@ export const buildAnalyzePrompt = (text: string) => `以下のテキストを、
 変換対象のテキスト:
 ${text}`
 
-// プロンプト全体 (指示 + テキスト) を stdin で受け取る
-export const defaultAnalyzeCmd = ['claude', '-p', '--model', 'haiku']
-
 export class AnalyzeError extends Error {
   constructor(message: string) {
     super(message)
@@ -36,28 +37,22 @@ export class AnalyzeError extends Error {
   }
 }
 
-// テキストを analyzeCmd に通して検証済みの台本JSONを返す。
-// LLM は稀に JSON 以外を返すのでパースできるまで数回試し、駄目なら AnalyzeError を投げる。
-export async function analyzeText(
-  text: string,
-  analyzeCmd: string[],
-  carry = 1 / 3,
+// 呼び出し側から見た共通インタフェース。carry は感情の引きずり量 (0-0.9, 既定 1/3)。
+export type Analyzer = (text: string, carry?: number) => Promise<Script>
+
+// LLM 出力を JSON として検証し、パースに失敗したら 1 回だけ再試行する共通ループ。
+async function withRetry(
+  fetchOutput: () => Promise<string>,
+  carry: number,
 ): Promise<Script> {
   let lastError = ''
   for (let attempt = 1; attempt <= 2; attempt++) {
-    const proc = Bun.spawn(analyzeCmd, {
-      stdin: new TextEncoder().encode(buildAnalyzePrompt(text)),
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const [out, err, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ])
-    if (code !== 0) {
-      lastError = `analyze command failed (${code}): ${err.slice(0, 500)}`
-      console.error(lastError)
+    let out: string
+    try {
+      out = await fetchOutput()
+    } catch (e) {
+      lastError = (e as Error).message
+      console.error(`${lastError} (attempt ${attempt})`)
       continue
     }
     try {
@@ -69,4 +64,94 @@ export async function analyzeText(
     }
   }
   throw new AnalyzeError(lastError)
+}
+
+// CLI backend。stdin にプロンプト、stdout から台本 JSON を回収する。
+export function cliAnalyzer(cmd: string[]): Analyzer {
+  return (text, carry = 1 / 3) =>
+    withRetry(async () => {
+      const proc = Bun.spawn(cmd, {
+        stdin: new TextEncoder().encode(buildAnalyzePrompt(text)),
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const [out, err, code] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ])
+      if (code !== 0) {
+        throw new Error(`analyze command failed (${code}): ${err.slice(0, 500)}`)
+      }
+      return out
+    }, carry)
+}
+
+// OpenAI 互換 backend。OpenAI 本家 / Groq / LM Studio / Ollama /v1 / vLLM / LocalAI などに共通で通る。
+export function openaiAnalyzer(opts: {
+  apiBase: string
+  apiKey: string
+  model: string
+}): Analyzer {
+  const url = `${opts.apiBase.replace(/\/+$/, '')}/chat/completions`
+  return (text, carry = 1 / 3) =>
+    withRetry(async () => {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${opts.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: opts.model,
+          messages: [{ role: 'user', content: buildAnalyzePrompt(text) }],
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error(`openai backend failed (${res.status}): ${body.slice(0, 500)}`)
+      }
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>
+      }
+      return data.choices?.[0]?.message?.content ?? ''
+    }, carry)
+}
+
+// 無効化 backend。/analyze を呼ばれても常に AnalyzeError (→ 502)。
+export function noneAnalyzer(): Analyzer {
+  return async () => {
+    throw new AnalyzeError(
+      'analyze backend is disabled (set ANALYZE_BACKEND=cli or openai in .env)',
+    )
+  }
+}
+
+// 環境変数から backend を組み立てる。既定は none (課金・CLI起動を意図せず走らせない安全側)。
+export function createAnalyzerFromEnv(env: NodeJS.ProcessEnv = process.env): Analyzer {
+  const backend = env.ANALYZE_BACKEND ?? 'none'
+  if (backend === 'none') return noneAnalyzer()
+  if (backend === 'cli') {
+    const cmdStr = (env.ANALYZE_CMD ?? 'claude -p --model haiku').trim()
+    if (!cmdStr) {
+      throw new Error('ANALYZE_CMD must not be empty when ANALYZE_BACKEND=cli')
+    }
+    // シェル経由で起動することでパイプ・クォート・環境変数展開を許容する。
+    // (POSIX sh 前提。Windows は WSL/Git Bash 上で運用する想定)
+    return cliAnalyzer(['sh', '-c', cmdStr])
+  }
+  if (backend === 'openai') {
+    const { OPENAI_API_BASE, OPENAI_API_KEY, OPENAI_MODEL } = env
+    if (!OPENAI_API_BASE || !OPENAI_API_KEY || !OPENAI_MODEL) {
+      throw new Error(
+        'ANALYZE_BACKEND=openai requires OPENAI_API_BASE, OPENAI_API_KEY, OPENAI_MODEL',
+      )
+    }
+    return openaiAnalyzer({
+      apiBase: OPENAI_API_BASE,
+      apiKey: OPENAI_API_KEY,
+      model: OPENAI_MODEL,
+    })
+  }
+  throw new Error(`unknown ANALYZE_BACKEND: ${backend} (expected: cli, openai, none)`)
 }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { createApp } from '../app.js'
+import { cliAnalyzer } from '../analyze.js'
 import { db } from '../db/index.js'
 import { projects, lines } from '../db/schema.js'
 
@@ -10,7 +11,11 @@ const FAKE_SCRIPT = '[{"text":"こんにちは。","emotion":{"honwaka":60}}]'
 async function setup(analyzeCmd: string[]) {
   db.delete(lines).run()
   db.delete(projects).run()
-  const app = createApp({ sayCmd: ['cat'], renderCmd: ['cat'], analyzeCmd })
+  const app = createApp({
+    sayCmd: ['cat'],
+    renderCmd: ['cat'],
+    analyzer: cliAnalyzer(analyzeCmd),
+  })
   const p = await (
     await app.request('/api/projects', {
       method: 'POST',

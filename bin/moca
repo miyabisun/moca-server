@@ -16,10 +16,10 @@
 #   tail -f app.log | grep --line-buffered ERROR | while read -r line; do moca -r "$line"; done
 #
 # 環境変数:
-#   MOCA_URL — moca-server の URL (デフォルト: http://manjaro:3000)
+#   MOCA_URL — moca-server の URL (デフォルト: http://localhost:3000)
 set -euo pipefail
 
-URL="${MOCA_URL:-http://manjaro:3000}"
+URL="${MOCA_URL:-http://localhost:3000}"
 
 raw=""
 if [ "${1:-}" = "-r" ] || [ "${1:-}" = "--raw" ]; then

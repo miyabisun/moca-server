@@ -1,9 +1,10 @@
 import 'hono'
+import type { Analyzer } from './analyze.js'
 
-// Shared Hono context variables. analyzeCmd is injected by createApp so the
-// import (acting) route can reach the (test-injectable) analyze command.
+// createApp が context に注入する共有変数。
+// import (acting) ルートが analyzer (テスト注入可) にアクセスするための橋渡し。
 declare module 'hono' {
   interface ContextVariableMap {
-    analyzeCmd: string[]
+    analyzer: Analyzer
   }
 }

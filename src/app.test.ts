@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { createApp } from './app.js'
+import { cliAnalyzer } from './analyze.js'
 import { db } from './db/index.js'
 import { dictionary, projects, lines } from './db/schema.js'
 import { MOCA_FORMAT, wavHeader } from './wav.js'
@@ -11,7 +12,7 @@ const app = createApp({
   sayCmd: ['cat'],
   renderCmd: ['cat'],
   // 入力を読み捨てて固定の台本JSONを返す analyzer のモック
-  analyzeCmd: ['sh', '-c', `cat > /dev/null; echo '${FAKE_SCRIPT}'`],
+  analyzer: cliAnalyzer(['sh', '-c', `cat > /dev/null; echo '${FAKE_SCRIPT}'`]),
 })
 
 const bodyAfterHeader = async (res: Response) => {
@@ -93,7 +94,7 @@ describe('POST /analyze', () => {
     const broken = createApp({
       sayCmd: ['cat'],
       renderCmd: ['cat'],
-      analyzeCmd: ['sh', '-c', 'cat > /dev/null; echo ごめんなさい'],
+      analyzer: cliAnalyzer(['sh', '-c', 'cat > /dev/null; echo ごめんなさい']),
     })
     const res = await broken.request('/analyze', { method: 'POST', body: 'a' })
     expect(res.status).toBe(502)
@@ -149,11 +150,11 @@ describe('読み替え辞書の合成時適用', () => {
     const spy = createApp({
       sayCmd: ['cat'],
       renderCmd: ['cat'],
-      analyzeCmd: [
+      analyzer: cliAnalyzer([
         'sh',
         '-c',
         'if grep -q GPU; then echo \'[{"text":"orig"}]\'; else echo \'[{"text":"repl"}]\'; fi',
-      ],
+      ]),
     })
     const res = await spy.request('/analyze', { method: 'POST', body: 'このGPUは速い' })
     const out = await res.json()

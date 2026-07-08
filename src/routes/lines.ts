@@ -4,7 +4,6 @@ import { eq, and, gt, max, sql } from 'drizzle-orm'
 import { db } from '../db/index.js'
 import { projects, lines } from '../db/schema.js'
 import { ScriptError, validateScript } from '../script.js'
-import { analyzeText } from '../analyze.js'
 import { serializeLine } from './serialize.js'
 
 const app = new Hono()
@@ -221,7 +220,7 @@ app.post('/api/projects/:id/import', async (c) => {
   }
 
   // acting: SSE で 1行ずつ進捗を流す
-  const analyzeCmd = c.get('analyzeCmd')
+  const analyzer = c.get('analyzer')
   return streamSSE(c, async (stream) => {
     const total = texts.length
     for (let i = 0; i < total; i++) {
@@ -230,7 +229,7 @@ app.post('/api/projects/:id/import', async (c) => {
       let lineMode: 'announcer' | 'acting' = 'acting'
       let script: string | null = null
       try {
-        script = JSON.stringify(await analyzeText(text, analyzeCmd))
+        script = JSON.stringify(await analyzer(text))
       } catch {
         // 分析失敗は announcer 行として保存し、データを失わない
         lineMode = 'announcer'

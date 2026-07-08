@@ -6,6 +6,7 @@ init()
 const port = Number(process.env.PORT) || 3000
 const app = createApp()
 
-console.log(`moca-server running on http://localhost:${port}/`)
+const backend = process.env.ANALYZE_BACKEND ?? 'none'
+console.log(`moca-server running on http://localhost:${port}/ (analyze backend: ${backend})`)
 
 export default { port, fetch: app.fetch }

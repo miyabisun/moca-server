@@ -3,7 +3,8 @@ import { serveStatic } from 'hono/bun'
 import { logger } from 'hono/logger'
 import { MOCA_FORMAT, wavHeader } from './wav.js'
 import { ScriptError, validateScript, toJsonl } from './script.js'
-import { AnalyzeError, analyzeText, defaultAnalyzeCmd } from './analyze.js'
+import { AnalyzeError, createAnalyzerFromEnv } from './analyze.js'
+import type { Analyzer } from './analyze.js'
 import { getIndexHtml as realGetIndexHtml } from './lib/spa.js'
 import projects from './routes/projects.js'
 import lines from './routes/lines.js'
@@ -15,8 +16,9 @@ export interface CreateAppOptions {
   sayCmd?: string[]
   // 台本合成コマンド。JSONL (1行=1segment) を stdin で受け取り、生PCM を stdout に吐く
   renderCmd?: string[]
-  // 感情分析コマンド。テキストを stdin で受け取り、台本 JSON を stdout に吐く
-  analyzeCmd?: string[]
+  // 感情分析 backend。テキストを受け取り検証済みの台本 JSON を返す。
+  // 省略時は環境変数 (ANALYZE_BACKEND ほか) から自動生成。
+  analyzer?: Analyzer
   // 管理画面 SPA の静的アセット配信ルート (テスト注入用)
   staticRoot?: string
   // index.html を返す関数 (テスト注入用)。null なら未ビルドとして 404
@@ -31,17 +33,18 @@ let synthLock: Promise<void> = Promise.resolve()
 export function createApp({
   sayCmd = bin('moca-say'),
   renderCmd = bin('moca-render'),
-  analyzeCmd = defaultAnalyzeCmd,
+  analyzer,
   staticRoot = './client/build',
   getIndexHtml = realGetIndexHtml,
 }: CreateAppOptions = {}): Hono {
   const app = new Hono()
+  const resolvedAnalyzer = analyzer ?? createAnalyzerFromEnv()
 
   app.use(logger())
 
-  // 流し込み (演技モード) ルートが analyzeCmd を参照できるよう context に載せる
+  // 流し込み (演技モード) ルートが analyzer を参照できるよう context に載せる
   app.use('*', async (c, next) => {
-    c.set('analyzeCmd', analyzeCmd)
+    c.set('analyzer', resolvedAnalyzer)
     await next()
   })
 
@@ -58,7 +61,7 @@ export function createApp({
     }
 
     try {
-      return c.json(await analyzeText(text, analyzeCmd, carry))
+      return c.json(await resolvedAnalyzer(text, carry))
     } catch (e) {
       if (e instanceof AnalyzeError) return c.text(e.message, 502)
       throw e
