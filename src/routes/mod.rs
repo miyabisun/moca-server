@@ -1,6 +1,7 @@
 mod dictionary;
 mod lines;
 mod projects;
+mod say;
 
 use crate::error::AppError;
 use crate::spa;
@@ -36,6 +37,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(projects::routes())
         .merge(lines::routes())
         .merge(dictionary::routes())
+        .merge(say::routes())
         .merge(placeholder_routes())
         .nest_service("/assets", ServeDir::new("client/build/assets"))
         .fallback_service(get(spa_fallback))
@@ -43,10 +45,9 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-// R2/R3 で実装する音声系エンドポイント。差し替えの印として 404 ではなく 501 を返す。
+// R3 で実装する音声系エンドポイント。差し替えの印として 404 ではなく 501 を返す。
 fn placeholder_routes() -> Router<AppState> {
     Router::new()
-        .route("/say", get(not_implemented).post(not_implemented))
         .route("/analyze", post(not_implemented))
         .route("/notify", post(not_implemented))
         .route("/notify/stream", get(not_implemented))
@@ -87,7 +88,10 @@ mod tests {
             config: Config {
                 port: 0,
                 db_path: ":memory:".into(),
+                voicepeak_path: "voicepeak".into(),
+                narrator: "Miyamai Moca".into(),
             },
+            synth: Arc::new(crate::synth::SynthQueue::new()),
         };
         build_router(state)
     }
@@ -458,8 +462,6 @@ mod tests {
     async fn voice_endpoints_are_501() {
         let app = app();
         for (method, uri) in [
-            (Method::GET, "/say"),
-            (Method::POST, "/say"),
             (Method::POST, "/analyze"),
             (Method::POST, "/notify"),
             (Method::GET, "/notify/stream"),

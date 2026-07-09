@@ -1,0 +1,266 @@
+// 音声合成パイプ: 合成の直列化 (SynthQueue) + voicepeak 起動 + セグメント合成。
+// bash 版 bin/moca-say + bin/moca-render の役割を Rust に内蔵する。
+
+use crate::wav::{extract_pcm, wav_header, MOCA_FORMAT};
+use axum::body::Bytes;
+use serde_json::Value;
+use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{Mutex, MutexGuard};
+
+// 48000Hz * 16bit * 1ch = 96000 bytes/s → 96 bytes/ms。
+const BYTES_PER_MS: usize = 96;
+// voicepeak は稀に起動直後に失敗するため、bin/moca-render と同じ最大 3 回リトライする。
+const MAX_ATTEMPTS: usize = 3;
+
+/// 合成のサーバー全体直列化キュー。
+///
+/// VOICEPEAK CLI は同時 1 プロセスに制限されている (ライセンス保護のハードチェック)。
+/// 2 個目の起動は「up to 1 command line instance can be executed at same time」で
+/// 失敗しリトライでは回避できないため、合成は必ず直列化する。
+/// tokio の Mutex は FIFO 公平なので追加のキュー実装は不要。
+pub struct SynthQueue {
+    lock: Mutex<()>,
+    depth: AtomicUsize,
+}
+
+impl SynthQueue {
+    pub fn new() -> Self {
+        Self {
+            lock: Mutex::new(()),
+            depth: AtomicUsize::new(0),
+        }
+    }
+
+    /// 待ち行列に加わり、ロックを取得したら SynthGuard を返す。
+    /// Guard が drop されるまで (= 全 voicepeak プロセス完了まで) ロックを保持する。
+    pub async fn enter(&self) -> SynthGuard<'_> {
+        let waiting = self.depth.fetch_add(1, Ordering::SeqCst) + 1;
+        tracing::debug!("synth queue depth: {waiting}");
+        let permit = self.lock.lock().await;
+        SynthGuard {
+            _permit: permit,
+            depth: &self.depth,
+        }
+    }
+}
+
+/// SynthQueue のロック保持証。Drop でロック解放と depth の減算を一元化する。
+pub struct SynthGuard<'a> {
+    _permit: MutexGuard<'a, ()>,
+    depth: &'a AtomicUsize,
+}
+
+impl Drop for SynthGuard<'_> {
+    fn drop(&mut self) {
+        self.depth.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// 合成に必要な voicepeak 設定 (Config から複製して合成タスクに渡す)。
+#[derive(Clone)]
+pub struct SynthConfig {
+    pub voicepeak_path: String,
+    pub narrator: String,
+}
+
+/// text/plain を文単位に分割する。bin/moca-say と同じ規則:
+/// 「。！？の直後」と「改行の直後」で区切り、区切り文字は前セグメント末尾に残す。
+/// 空白 (半角 space / 全角　) のみの断片はスキップする。
+pub fn split_sentences(text: &str) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut cur = String::new();
+
+    let flush = |cur: &mut String, out: &mut Vec<String>| {
+        // 空白 (半角/全角) のみの断片は捨てる。どちらにせよ cur は空に戻す。
+        let seg = std::mem::take(cur);
+        if seg.chars().any(|c| c != ' ' && c != '　') {
+            out.push(seg);
+        }
+    };
+
+    for c in text.chars() {
+        if c == '\n' {
+            // 改行は区切りのみで、セグメントには含めない。
+            flush(&mut cur, &mut segments);
+        } else {
+            cur.push(c);
+            if c == '。' || c == '！' || c == '？' {
+                flush(&mut cur, &mut segments);
+            }
+        }
+    }
+    flush(&mut cur, &mut segments);
+    segments
+}
+
+/// pause (ms) 分の無音 PCM を生成する (48kHz/16bit/mono の 0 埋め)。
+pub fn silence_pcm(pause_ms: usize) -> Vec<u8> {
+    vec![0u8; pause_ms * BYTES_PER_MS]
+}
+
+/// 1 セグメントを voicepeak で合成し PCM (s16le/48k/mono) を返す。最大 3 回リトライ。
+async fn synthesize_segment(cfg: &SynthConfig, seg: &Value) -> Result<Vec<u8>, String> {
+    let text = seg.get("text").and_then(Value::as_str).unwrap_or("");
+
+    // emotion: {k1:v1,k2:v2} → "k1=v1,k2=v2" (serde_json の Map はキー昇順で安定)。
+    let emotion = seg
+        .get("emotion")
+        .and_then(Value::as_object)
+        .filter(|o| !o.is_empty())
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        });
+    let speed = seg.get("speed").and_then(Value::as_i64);
+    let pitch = seg.get("pitch").and_then(Value::as_i64);
+
+    let mut last_err = String::new();
+    for attempt in 1..=MAX_ATTEMPTS {
+        match run_voicepeak(cfg, text, emotion.as_deref(), speed, pitch).await {
+            Ok(pcm) => return Ok(pcm),
+            Err(e) => {
+                tracing::warn!("voicepeak failed (attempt {attempt}) for {text:?}: {e}");
+                last_err = e;
+            }
+        }
+    }
+    Err(format!("voicepeak gave up on {text:?}: {last_err}"))
+}
+
+/// voicepeak を 1 回起動し、tempfile 経由で出力 WAV を読んで PCM を取り出す。
+async fn run_voicepeak(
+    cfg: &SynthConfig,
+    text: &str,
+    emotion: Option<&str>,
+    speed: Option<i64>,
+    pitch: Option<i64>,
+) -> Result<Vec<u8>, String> {
+    // 出力は必ずシーク可能なユニーク tempfile: -o /dev/stdout は空、FIFO は即失敗する
+    // (RIFF chunk_size を後埋めするため)。NamedTempFile の RAII で使用後即削除される。
+    let tmp = tempfile::NamedTempFile::new().map_err(|e| format!("tempfile: {e}"))?;
+    let out_path = tmp.path();
+
+    let mut cmd = tokio::process::Command::new(&cfg.voicepeak_path);
+    cmd.arg("-s")
+        .arg(text)
+        .arg("-n")
+        .arg(&cfg.narrator)
+        .arg("-o")
+        .arg(out_path);
+    if let Some(e) = emotion {
+        cmd.arg("-e").arg(e);
+    }
+    if let Some(s) = speed {
+        cmd.arg("--speed").arg(s.to_string());
+    }
+    if let Some(p) = pitch {
+        cmd.arg("--pitch").arg(p.to_string());
+    }
+    // クライアント切断で合成タスク (と child) が drop されたら voicepeak も止める。
+    cmd.kill_on_drop(true);
+    // voicepeak はデバッグログを出すだけなので PCM とは無関係。stdout は捨て、stderr はログへ。
+    cmd.stdout(Stdio::null()).stderr(Stdio::inherit());
+
+    let status = cmd.status().await.map_err(|e| format!("spawn: {e}"))?;
+    if !status.success() {
+        return Err(format!("exited with {status}"));
+    }
+
+    let bytes = tokio::fs::read(out_path)
+        .await
+        .map_err(|e| format!("read output: {e}"))?;
+    extract_pcm(&bytes)
+}
+
+/// セグメント列を順に合成し、WAV ヘッダ + 各 PCM + pause 無音を mpsc へ送る。
+/// タスク先頭で synth.enter() してサーバー全体の合成を直列化する
+/// (ロックは全 voicepeak プロセス完了 = 本関数の終了まで保持)。
+pub async fn stream_synthesis(
+    synth: Arc<SynthQueue>,
+    cfg: SynthConfig,
+    segments: Vec<Value>,
+    tx: Sender<Result<Bytes, std::io::Error>>,
+) {
+    let _guard = synth.enter().await;
+
+    // 最初にヘッダを送る → 1 文目完成時点で再生が始まる体感を保つ。
+    if tx
+        .send(Ok(Bytes::from(wav_header(&MOCA_FORMAT))))
+        .await
+        .is_err()
+    {
+        return; // 受信側 drop = クライアント切断。ロックを解放して終了。
+    }
+
+    for seg in &segments {
+        let pcm = tokio::select! {
+            r = synthesize_segment(&cfg, seg) => match r {
+                Ok(p) => p,
+                Err(e) => {
+                    // 3 リトライ後も失敗。ヘッダ送信済みでステータス変更不可なので
+                    // エラーフレームを送ってボディをエラー終了させる (TS 版と同挙動)。
+                    tracing::error!("synth aborted: {e}");
+                    let _ = tx.send(Err(std::io::Error::other(e))).await;
+                    return;
+                }
+            },
+            _ = tx.closed() => return, // 受信側 drop = クライアント切断。合成タスクを中断し voicepeak を kill する。
+        };
+        if tx.send(Ok(Bytes::from(pcm))).await.is_err() {
+            return;
+        }
+
+        let pause = seg.get("pause").and_then(Value::as_u64).unwrap_or(0) as usize;
+        if pause > 0 && tx.send(Ok(Bytes::from(silence_pcm(pause)))).await.is_err() {
+            return;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_on_punctuation_and_newline() {
+        assert_eq!(
+            split_sentences("こんにちは。今日はいい天気。"),
+            vec!["こんにちは。", "今日はいい天気。"]
+        );
+        assert_eq!(
+            split_sentences("一行目\n二行目"),
+            vec!["一行目", "二行目"]
+        );
+        assert_eq!(
+            split_sentences("やあ！げんき？うん"),
+            vec!["やあ！", "げんき？", "うん"]
+        );
+    }
+
+    #[test]
+    fn skips_whitespace_only_fragments() {
+        // 空白のみ (半角/全角) の断片はスキップ、通常のトレーリング改行も落ちる。
+        assert_eq!(
+            split_sentences("A。  \n　\nB。\n"),
+            vec!["A。", "B。"]
+        );
+    }
+
+    #[test]
+    fn keeps_trailing_text_without_delimiter() {
+        assert_eq!(split_sentences("区切りなし"), vec!["区切りなし"]);
+        assert_eq!(split_sentences(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn silence_is_96_bytes_per_ms() {
+        assert_eq!(silence_pcm(0).len(), 0);
+        assert_eq!(silence_pcm(100).len(), 100 * 96);
+        assert!(silence_pcm(10).iter().all(|&b| b == 0));
+    }
+}

@@ -7,10 +7,13 @@ mod script;
 mod serialize;
 mod spa;
 mod state;
+mod synth;
+mod wav;
 
 use config::Config;
 use state::AppState;
 use std::sync::{Arc, Mutex};
+use synth::SynthQueue;
 
 #[tokio::main]
 async fn main() {
@@ -24,6 +27,7 @@ async fn main() {
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
         config: config.clone(),
+        synth: Arc::new(SynthQueue::new()),
     };
 
     let app = routes::build_router(state);
