@@ -4,6 +4,7 @@
 
 use crate::dictionary::{apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry};
 use crate::error::AppError;
+use crate::fallback::FallbackDict;
 use crate::serialize::get_line;
 use crate::state::AppState;
 use crate::synth::{split_sentences, OutputFormat};
@@ -42,9 +43,10 @@ async fn audio_wav(
 
     // acting かつ script が保存されていれば台本経路、それ以外は text を文分割する経路。
     // acting だが script が NULL の場合も 404/500 にせず text 経路に落とす (データを失わない)。
+    // SQLite 辞書を適用したうえで、後段にフォールバック辞書 (英単語→カタカナ) を重ねる。
     let segments = match script {
-        Some(s) if mode == "acting" => stored_script_segments(&s, &entries)?,
-        _ => split_sentences(&apply_dictionary(&text, &entries))
+        Some(s) if mode == "acting" => stored_script_segments(&s, &entries, &state.fallback)?,
+        _ => split_sentences(&state.fallback.apply(&apply_dictionary(&text, &entries)))
             .into_iter()
             .map(|s| json!({ "text": s }))
             .collect(),
@@ -54,14 +56,20 @@ async fn audio_wav(
     Ok(super::say::stream_response(&state, segments, OutputFormat::Wav))
 }
 
-/// 保存済み script 文字列 (保存時に検証済み) を parse し、各 segment.text に辞書を適用する。
-fn stored_script_segments(script: &str, entries: &[DictEntry]) -> Result<Vec<Value>, AppError> {
+/// 保存済み script 文字列 (保存時に検証済み) を parse し、各 segment.text に
+/// SQLite 辞書 → フォールバック辞書の順で適用する。
+fn stored_script_segments(
+    script: &str,
+    entries: &[DictEntry],
+    fallback: &FallbackDict,
+) -> Result<Vec<Value>, AppError> {
     let parsed: Value = serde_json::from_str(script)
         .map_err(|e| AppError::Internal(format!("stored script parse: {e}")))?;
     let arr = parsed
         .as_array()
         .ok_or_else(|| AppError::Internal("stored script is not an array".into()))?;
-    Ok(apply_dictionary_to_segments(arr, entries))
+    let segs = apply_dictionary_to_segments(arr, entries);
+    Ok(fallback.apply_to_segments(&segs))
 }
 
 #[cfg(test)]
@@ -149,11 +157,21 @@ mod tests {
                 db_path: ":memory:".into(),
                 voicepeak_path,
                 narrator: "Test".into(),
+                bep_dict_path: "./bep-eng.dic".into(),
+                bep_dict_url: String::new(),
             },
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
+            fallback: Arc::new(crate::fallback::FallbackDict::empty()),
             notify,
         }
+    }
+
+    // fallback 辞書を注入した state を作る。
+    fn state_with_fallback(voicepeak_path: String, dict: &str) -> AppState {
+        let mut state = state_with(voicepeak_path);
+        state.fallback = Arc::new(crate::fallback::FallbackDict::parse(dict));
+        state
     }
 
     fn insert_project(state: &AppState, name: &str) -> i64 {
@@ -250,6 +268,33 @@ mod tests {
         // 2 文に分割されて 2 回合成される。
         assert!(recorded.contains("一。"), "recorded: {recorded}");
         assert!(recorded.contains("二。"), "recorded: {recorded}");
+    }
+
+    #[tokio::test]
+    async fn audio_wav_announcer_applies_fallback() {
+        let fake = make_fake();
+        let state = state_with_fallback(fake.bin.display().to_string(), "COMIC ｺﾐｯｸ 0\n");
+        let pid = insert_project(&state, "P");
+        let lid = insert_line(&state, pid, "announcer", "comic。", None);
+        let app = routes().with_state(state);
+        let (status, _) = send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
+        assert_eq!(status, StatusCode::OK);
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("コミック。"), "recorded: {recorded}");
+    }
+
+    #[tokio::test]
+    async fn audio_wav_acting_applies_fallback() {
+        let fake = make_fake();
+        let state = state_with_fallback(fake.bin.display().to_string(), "COMIC ｺﾐｯｸ 0\n");
+        let pid = insert_project(&state, "P");
+        let script = r#"[{"text":"comic。","emotion":{"honwaka":60}}]"#;
+        let lid = insert_line(&state, pid, "acting", "無視される", Some(script));
+        let app = routes().with_state(state);
+        let (status, _) = send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
+        assert_eq!(status, StatusCode::OK);
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("コミック。"), "recorded: {recorded}");
     }
 
     #[tokio::test]

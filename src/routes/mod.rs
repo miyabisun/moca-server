@@ -88,9 +88,12 @@ mod tests {
                 db_path: ":memory:".into(),
                 voicepeak_path: "voicepeak".into(),
                 narrator: "Miyamai Moca".into(),
+                bep_dict_path: "./bep-eng.dic".into(),
+                bep_dict_url: String::new(),
             },
             synth: Arc::new(crate::synth::SynthQueue::new()),
             analyzer: Arc::new(analyzer),
+            fallback: Arc::new(crate::fallback::FallbackDict::empty()),
             notify,
         };
         build_router(state)

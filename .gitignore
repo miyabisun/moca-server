@@ -6,3 +6,7 @@ target/
 client/build/
 .env
 .env.local
+
+# GPLv2 fallback dictionary (bep-eng.dic 由来) は同梱せず起動時に DL する
+bep-eng.dic
+.bep-eng.dic.tmp

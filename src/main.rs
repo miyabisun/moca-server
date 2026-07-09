@@ -3,6 +3,7 @@ mod config;
 mod db;
 mod dictionary;
 mod error;
+mod fallback;
 mod opus;
 mod routes;
 mod script;
@@ -26,6 +27,14 @@ async fn main() {
     let config = Config::from_env();
     let conn = db::open(&config.db_path);
     let analyzer = analyze::create_analyzer_from_env();
+    // 英単語→カタカナのフォールバック辞書を起動時に 1 回だけロード (DL 失敗時は無効化)。
+    let fallback =
+        Arc::new(fallback::load_or_download(&config.bep_dict_path, &config.bep_dict_url).await);
+    if fallback.is_empty() {
+        tracing::info!("fallback dict disabled (not loaded)");
+    } else {
+        tracing::info!("fallback dict loaded");
+    }
     // 通知 broadcast。購読者ゼロでも send は Err になるだけで捨てられる (fire-and-forget)。
     let (notify, _) = tokio::sync::broadcast::channel::<String>(64);
 
@@ -34,6 +43,7 @@ async fn main() {
         config: config.clone(),
         synth: Arc::new(SynthQueue::new()),
         analyzer: Arc::new(analyzer),
+        fallback,
         notify,
     };
 

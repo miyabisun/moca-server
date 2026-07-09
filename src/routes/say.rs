@@ -69,7 +69,9 @@ fn build_script_segments(state: &AppState, body: &Bytes) -> Result<Vec<Value>, A
     let script = validate_script(&parsed)?;
     let entries = load_entries(state)?;
     let array = script.as_array().expect("validate_script returns an array");
-    Ok(apply_dictionary_to_segments(array, &entries))
+    // SQLite 辞書を先に消費し、その後段でフォールバック辞書を重ねる。
+    let segs = apply_dictionary_to_segments(array, &entries);
+    Ok(state.fallback.apply_to_segments(&segs))
 }
 
 // text/plain 経路: 文分割してから 1 セグメント列にする。?raw=1 は辞書スキップ。
@@ -94,7 +96,10 @@ fn build_plain_segments(
     let processed = if raw {
         text
     } else {
-        apply_dictionary(&text, &load_entries(state)?)
+        // SQLite 辞書 → フォールバック辞書の順で適用してから文分割する。
+        state
+            .fallback
+            .apply(&apply_dictionary(&text, &load_entries(state)?))
     };
 
     let segments = split_sentences(&processed)
@@ -232,11 +237,21 @@ mod tests {
                 db_path: ":memory:".into(),
                 voicepeak_path: fake.bin.display().to_string(),
                 narrator: "Test".into(),
+                bep_dict_path: "./bep-eng.dic".into(),
+                bep_dict_url: String::new(),
             },
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
+            fallback: Arc::new(crate::fallback::FallbackDict::empty()),
             notify,
         }
+    }
+
+    // fallback 辞書を注入した state を作る (優先順位・後段適用の検証用)。
+    fn state_with_fallback(fake: &Fake, dict: &str) -> AppState {
+        let mut state = state_with(fake);
+        state.fallback = Arc::new(crate::fallback::FallbackDict::parse(dict));
+        state
     }
 
     fn app_with(fake: &Fake) -> Router {
@@ -398,6 +413,51 @@ mod tests {
         let recorded = std::fs::read_to_string(&fake.record).unwrap();
         assert!(recorded.contains("このGPU"), "recorded: {recorded}");
         assert!(!recorded.contains("ジーピーユー"));
+    }
+
+    #[tokio::test]
+    async fn fallback_applies_to_plain_text() {
+        let fake = make_fake(0.0);
+        let state = state_with_fallback(&fake, "COMIC ｺﾐｯｸ 0\n");
+        let app = routes().with_state(state);
+        send(&app, post_text("/say", "comic")).await;
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("コミック"), "recorded: {recorded}");
+    }
+
+    #[tokio::test]
+    async fn sqlite_dictionary_takes_priority_over_fallback() {
+        // SQLite 辞書が先に COMIC を消費するので fallback は発火しない。
+        let fake = make_fake(0.0);
+        let state = state_with_fallback(&fake, "COMIC ｺﾐｯｸ 0\n");
+        insert_dict(&state, "COMIC", "まんが");
+        let app = routes().with_state(state);
+        send(&app, post_text("/say", "comic")).await;
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("まんが"), "recorded: {recorded}");
+        assert!(!recorded.contains("コミック"));
+    }
+
+    #[tokio::test]
+    async fn raw_query_skips_fallback() {
+        let fake = make_fake(0.0);
+        let state = state_with_fallback(&fake, "COMIC ｺﾐｯｸ 0\n");
+        let app = routes().with_state(state);
+        send(&app, post_text("/say?raw=1", "comic")).await;
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("comic"), "recorded: {recorded}");
+        assert!(!recorded.contains("コミック"));
+    }
+
+    #[tokio::test]
+    async fn fallback_applies_to_script_segments() {
+        let fake = make_fake(0.0);
+        let state = state_with_fallback(&fake, "COMIC ｺﾐｯｸ 0\n");
+        let app = routes().with_state(state);
+        let script = json!([{ "text": "comic。" }]);
+        send(&app, post_json_wav("/say", script)).await;
+        let recorded = std::fs::read_to_string(&fake.record).unwrap();
+        assert!(recorded.contains("コミック。"), "recorded: {recorded}");
     }
 
     #[tokio::test]

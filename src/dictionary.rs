@@ -84,20 +84,24 @@ pub fn apply_dictionary(text: &str, entries: &[DictEntry]) -> String {
     out
 }
 
-/// script セグメント配列の各要素の "text" に辞書を適用する。
+/// script セグメント配列の各要素の "text" に f を適用する。
 /// text 以外のフィールド (emotion / pause 等) はそのまま保持する。
-pub fn apply_dictionary_to_segments(segments: &[Value], entries: &[DictEntry]) -> Vec<Value> {
+pub fn map_segment_text(segments: &[Value], mut f: impl FnMut(&str) -> String) -> Vec<Value> {
     segments
         .iter()
         .map(|seg| {
             let mut obj: Map<String, Value> = seg.as_object().cloned().unwrap_or_default();
             if let Some(text) = obj.get("text").and_then(Value::as_str) {
-                let replaced = apply_dictionary(text, entries);
-                obj.insert("text".into(), Value::from(replaced));
+                obj.insert("text".into(), Value::from(f(text)));
             }
             Value::Object(obj)
         })
         .collect()
+}
+
+/// script セグメント配列の各要素の "text" に辞書を適用する。
+pub fn apply_dictionary_to_segments(segments: &[Value], entries: &[DictEntry]) -> Vec<Value> {
+    map_segment_text(segments, |text| apply_dictionary(text, entries))
 }
 
 #[cfg(test)]

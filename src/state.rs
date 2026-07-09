@@ -1,5 +1,6 @@
 use crate::analyze::Backend;
 use crate::config::Config;
+use crate::fallback::FallbackDict;
 use crate::synth::SynthQueue;
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex};
@@ -15,6 +16,8 @@ pub struct AppState {
     pub synth: Arc<SynthQueue>,
     /// 感情分析 backend (ANALYZE_BACKEND から構築)。/analyze と流し込み acting が使う。
     pub analyzer: Arc<Backend>,
+    /// 英単語→カタカナのフォールバック辞書 (bep-eng.dic 由来)。SQLite 辞書の後段に適用する。
+    pub fallback: Arc<FallbackDict>,
     /// 通知 pub/sub。/notify で send、/notify/stream で subscribe する broadcast。
     pub notify: tokio::sync::broadcast::Sender<String>,
 }
