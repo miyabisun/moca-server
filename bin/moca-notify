@@ -22,5 +22,9 @@ if [ -z "${input// /}" ]; then
   exit 2
 fi
 
-# 204 No Content が返るので出力は無い。-f で HTTP エラー時に非ゼロ終了する。
-printf '%s' "$input" | curl -sf -X POST -H 'content-type: text/plain' --data-binary @- "$URL/notify"
+# 204 No Content が返るので成功時は無音。-S で接続失敗等の curl エラーは stderr に出し、
+# HTTP エラー (4xx/5xx) や接続不可は行き先 URL 込みのメッセージで報せる。
+if ! printf '%s' "$input" | curl -sfS -X POST -H 'content-type: text/plain' --data-binary @- "$URL/notify"; then
+  echo "moca-notify: failed to notify $URL/notify (サーバーは起動していますか? MOCA_URL を確認してください)" >&2
+  exit 1
+fi

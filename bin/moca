@@ -40,7 +40,7 @@ play_wav() {
 
 # -r: 感情分析なしで text/plain のまま /say へ
 if [ -n "$raw" ]; then
-  printf '%s' "$input" | curl -sfN --data-binary @- "$URL/say" | play_wav
+  printf '%s' "$input" | curl -sfSN --data-binary @- "$URL/say" | play_wav
   exit 0
 fi
 
@@ -50,12 +50,12 @@ stripped=$(printf '%s' "$input" | tr -d '[:space:]')
 
 if [ "${stripped:0:1}" = "[" ] && [ "${stripped: -1}" = "]" ]; then
   printf '%s' "$input" \
-    | curl -sfN -H 'content-type: application/json' --data-binary @- "$URL/say" \
+    | curl -sfSN -H 'content-type: application/json' --data-binary @- "$URL/say" \
     | play_wav
 else
-  script=$(printf '%s' "$input" | curl -sf --data-binary @- "$URL/analyze")
+  script=$(printf '%s' "$input" | curl -sfS --data-binary @- "$URL/analyze")
   printf '%s\n' "$script"
   printf '%s' "$script" \
-    | curl -sfN -H 'content-type: application/json' --data-binary @- "$URL/say" \
+    | curl -sfSN -H 'content-type: application/json' --data-binary @- "$URL/say" \
     | play_wav
 fi
