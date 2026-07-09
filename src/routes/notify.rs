@@ -1,6 +1,5 @@
 // 通知 pub/sub。tmux などの外部イベントを text/plain で受け、購読中の全 SPA に
 // SSE で broadcast する。永続化・再送・認証はしない (LAN 前提の fire-and-forget)。
-// 契約は src-ts/routes/notify.test.ts が正。
 
 use crate::error::AppError;
 use crate::state::AppState;

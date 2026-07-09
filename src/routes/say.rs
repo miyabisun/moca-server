@@ -1,7 +1,7 @@
-// /say エンドポイント: テキスト/台本を合成し WAV をチャンク配信する。
-// TS 版 src-ts/app.ts の /say と契約互換。
+// /say エンドポイント: テキスト/台本を合成し音声をチャンク配信する。
+// 既定は Ogg/Opus、Accept: audio/wav で可逆 WAV を返す。
 
-use crate::dictionary::{apply_dictionary, load_dictionary, DictEntry};
+use crate::dictionary::{apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry};
 use crate::error::AppError;
 use crate::script::validate_script;
 use crate::state::AppState;
@@ -13,7 +13,7 @@ use axum::http::{HeaderMap, HeaderValue, Method};
 use axum::response::Response;
 use axum::routing::get;
 use axum::Router;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -42,7 +42,7 @@ async fn say(
         build_plain_segments(&state, &method, &query, &body)?
     };
 
-    // 既定は Ogg/Opus (帯域 1/12)。Accept: audio/wav は R2 の WAV 経路 (動画素材用の可逆)。
+    // 既定は Ogg/Opus (帯域 1/12)。Accept: audio/wav は WAV 経路 (動画素材用の可逆出力)。
     let wants_wav = headers
         .get(ACCEPT)
         .and_then(|v| v.to_str().ok())
@@ -68,24 +68,8 @@ fn build_script_segments(state: &AppState, body: &Bytes) -> Result<Vec<Value>, A
         .map_err(|_| AppError::BadRequest("invalid JSON body".into()))?;
     let script = validate_script(&parsed)?;
     let entries = load_entries(state)?;
-
-    let segments = script
-        .as_array()
-        .expect("validate_script returns an array")
-        .iter()
-        .map(|seg| {
-            let mut obj: Map<String, Value> = seg
-                .as_object()
-                .expect("validate_script segments are objects")
-                .clone();
-            if let Some(text) = obj.get("text").and_then(Value::as_str) {
-                let replaced = apply_dictionary(text, &entries);
-                obj.insert("text".into(), Value::from(replaced));
-            }
-            Value::Object(obj)
-        })
-        .collect();
-    Ok(segments)
+    let array = script.as_array().expect("validate_script returns an array");
+    Ok(apply_dictionary_to_segments(array, &entries))
 }
 
 // text/plain 経路: 文分割してから 1 セグメント列にする。?raw=1 は辞書スキップ。
@@ -121,7 +105,8 @@ fn build_plain_segments(
 }
 
 // 合成タスクを spawn し、mpsc を Body::from_stream に繋いで即レスポンスを返す。
-fn stream_response(state: &AppState, segments: Vec<Value>, format: OutputFormat) -> Response {
+// audio.wav (可逆 WAV 固定) からも同じ経路を通すため兄弟モジュールへ公開する。
+pub(super) fn stream_response(state: &AppState, segments: Vec<Value>, format: OutputFormat) -> Response {
     let synth = Arc::clone(&state.synth);
     let cfg = SynthConfig {
         voicepeak_path: state.config.voicepeak_path.clone(),
@@ -251,6 +236,7 @@ mod tests {
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
             notify,
+            vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
@@ -283,7 +269,7 @@ mod tests {
             .unwrap()
     }
 
-    // Accept: audio/wav 版。R2 の WAV 経路を検証する (バイト長が決定的)。
+    // Accept: audio/wav 版。WAV 経路を検証する (バイト長が決定的)。
     fn post_text_wav(uri: &str, body: &str) -> Request<Body> {
         Request::builder()
             .method(Method::POST)

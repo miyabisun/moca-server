@@ -1,12 +1,9 @@
 // 読み替え辞書の適用ロジック。合成時の入力前処理としてのみ使う。
 // マスターテキスト (lines.text / script JSON) は決して書き換えない — 音だけ差し替える。
-// TS 版 src-ts/dictionary.ts の applyDictionary / loadDictionary 相当。
-//
-// 純粋関数として今回移植しユニットテストまで通すが、実際の呼び出しは R2 (合成パイプ)。
-// bin クレートでは R2 まで非テストの呼び出し元が無いため dead_code を許可する。
-#![allow(dead_code)]
+// 置換規則: 表記→読み。最長一致優先で、ASCII の surface は大文字小文字を無視する。
 
 use rusqlite::Connection;
+use serde_json::{Map, Value};
 
 #[derive(Debug, Clone)]
 pub struct DictEntry {
@@ -14,7 +11,7 @@ pub struct DictEntry {
     pub reading: String,
 }
 
-// db から全件取得 (合成1リクエストにつき1回ロードする想定。R2 で使用)。
+// db から全件取得 (合成 1 リクエストにつき 1 回ロードする想定)。
 pub fn load_dictionary(conn: &Connection) -> rusqlite::Result<Vec<DictEntry>> {
     let mut stmt = conn.prepare("SELECT surface, reading FROM dictionary")?;
     let rows = stmt.query_map([], |r| {
@@ -85,6 +82,22 @@ pub fn apply_dictionary(text: &str, entries: &[DictEntry]) -> String {
         }
     }
     out
+}
+
+/// script セグメント配列の各要素の "text" に辞書を適用する。
+/// text 以外のフィールド (emotion / pause 等) はそのまま保持する。
+pub fn apply_dictionary_to_segments(segments: &[Value], entries: &[DictEntry]) -> Vec<Value> {
+    segments
+        .iter()
+        .map(|seg| {
+            let mut obj: Map<String, Value> = seg.as_object().cloned().unwrap_or_default();
+            if let Some(text) = obj.get("text").and_then(Value::as_str) {
+                let replaced = apply_dictionary(text, entries);
+                obj.insert("text".into(), Value::from(replaced));
+            }
+            Value::Object(obj)
+        })
+        .collect()
 }
 
 #[cfg(test)]

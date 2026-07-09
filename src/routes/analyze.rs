@@ -1,6 +1,6 @@
-// テキスト → 台本JSON (感情パラメータの自動生成)。TS 版 app.ts の /analyze を移植。
+// テキスト → 台本JSON (感情パラメータの自動生成)。/analyze エンドポイント。
 // ?carry=0〜0.9 で前の文の感情をどれだけ引きずるか指定 (既定 1/3、0 で無効)。
-// 辞書は適用しない (原文を analyzer に渡す) — TS 版の不変条件。
+// 辞書は適用しない (原文を analyzer に渡す)。
 
 use crate::analyze::DEFAULT_CARRY;
 use crate::state::AppState;

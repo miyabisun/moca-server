@@ -1,6 +1,6 @@
-// WAV ヘッダ生成と RIFF チャンクパーサ。TS 版 src-ts/wav.ts の移植 + PCM 抽出。
+// WAV ヘッダ生成と RIFF チャンクパーサ。合成出力 (48kHz/16bit/mono) の PCM 抽出に使う。
 
-/// PCM フォーマット記述子 (TS 版 WavFormat 相当)。
+/// PCM フォーマット記述子。
 pub struct WavFormat {
     pub sample_rate: u32,
     pub channels: u16,

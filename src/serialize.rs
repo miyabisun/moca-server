@@ -1,4 +1,4 @@
-// DB 行 → API 形状。TS 版 src-ts/routes/serialize.ts の serializeLine 相当。
+// DB 行 → API 形状。行 (lines) を JSON へ整形する。
 // script は保存文字列を JSON parse して構造で返す (null は null)。
 
 use rusqlite::{Connection, OptionalExtension, Row};

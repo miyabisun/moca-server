@@ -1,4 +1,5 @@
 mod analyze;
+mod audio;
 mod dictionary;
 mod lines;
 mod notify;
@@ -40,6 +41,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(lines::routes())
         .merge(dictionary::routes())
         .merge(say::routes())
+        .merge(audio::routes())
         .merge(analyze::routes())
         .merge(notify::routes())
         .nest_service("/assets", ServeDir::new("client/build/assets"))
@@ -90,6 +92,7 @@ mod tests {
             synth: Arc::new(crate::synth::SynthQueue::new()),
             analyzer: Arc::new(analyzer),
             notify,
+            vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
         };
         build_router(state)
     }

@@ -1,0 +1,92 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+      - name: Build SPA
+        run: bun run build:client
+
+      - name: Install audio build deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Package artifacts
+        run: |
+          cp target/release/moca-server moca-server-linux-x86_64
+          sha256sum moca-server-linux-x86_64 > moca-server-linux-x86_64.sha256
+          tar -czf client-build.tar.gz -C client build
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            moca-server-linux-x86_64
+            moca-server-linux-x86_64.sha256
+            client-build.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+      - name: Build SPA
+        run: bun run build:client
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        # audiopus_sys は libopus が無ければバンドルソースを cmake でビルドする。
+        # cmake は windows-latest ランナーに標準搭載。
+        run: cargo build --release
+
+      - name: Package artifacts
+        shell: pwsh
+        run: |
+          Copy-Item target/release/moca-server.exe moca-server-windows-x86_64.exe
+          (Get-FileHash moca-server-windows-x86_64.exe -Algorithm SHA256).Hash.ToLower() + "  moca-server-windows-x86_64.exe" | Out-File -Encoding ascii moca-server-windows-x86_64.exe.sha256
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            moca-server-windows-x86_64.exe
+            moca-server-windows-x86_64.exe.sha256
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/miyabisun/moca-server:latest
+            ghcr.io/miyabisun/moca-server:${{ github.ref_name }}

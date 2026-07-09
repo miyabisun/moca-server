@@ -1,5 +1,4 @@
-// 管理画面 SPA の index.html を返す。TS 版 src-ts/lib/spa.ts と同じく verbatim で返す。
-// (novel-server の base_path 書き換えは moca には存在しないので写さない。)
+// 管理画面 SPA の index.html を返す。ビルド成果物を verbatim で返す (書き換えなし)。
 
 use std::fs;
 use std::path::Path;

@@ -17,4 +17,6 @@ pub struct AppState {
     pub analyzer: Arc<Backend>,
     /// 通知 pub/sub。/notify で send、/notify/stream で subscribe する broadcast。
     pub notify: tokio::sync::broadcast::Sender<String>,
+    /// voicepeak バイナリの sha256 (先頭16hex) キャッシュ。/api/fingerprint で初回だけ計算する。
+    pub vp_fingerprint: Arc<tokio::sync::OnceCell<String>>,
 }

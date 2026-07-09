@@ -1,5 +1,5 @@
-// 行 (lines) CRUD + 並べ替え + 流し込み。TS 版 src-ts/routes/lines.ts を契約互換に移植。
-// import の acting モードは analyzer (R3) 依存のため 501 を返す。
+// 行 (lines) CRUD + 並べ替え + 流し込み。
+// import の acting モードは analyzer を使い、進捗を SSE でストリーミングしながら台本を保存する。
 
 use crate::analyze::DEFAULT_CARRY;
 use crate::db::now_iso;

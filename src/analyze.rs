@@ -1,5 +1,5 @@
 // テキスト → 台本JSON の生成ロジック。/analyze とテキスト流し込み (演技モード) が共有する。
-// TS 版 src-ts/analyze.ts の移植。backend は 3 種 (ANALYZE_BACKEND で切替):
+// backend は 3 種 (ANALYZE_BACKEND で切替):
 //   - cli    … 任意の LLM CLI を sh -c で起動。stdin=プロンプト, stdout=台本JSON
 //   - openai … OpenAI 互換の POST {base}/chat/completions を叩く
 //   - none   … /analyze を無効化。呼ばれたら AnalyzeError
@@ -32,7 +32,6 @@ pub trait Analyzer: Send + Sync {
 pub const DEFAULT_CARRY: f64 = 1.0 / 3.0;
 
 /// 指示と変換対象テキストを結合して 1 つのプロンプトにする。
-/// src-ts/analyze.ts の buildAnalyzePrompt を一字一句写経。
 pub fn build_analyze_prompt(text: &str) -> String {
     let head = r#"以下のテキストを、音声合成ソフト VOICEPEAK の「宮舞モカ」で読み上げるための台本JSONに変換してください。
 
@@ -55,7 +54,7 @@ pub fn build_analyze_prompt(text: &str) -> String {
     format!("{head}{text}")
 }
 
-/// LLM 出力を検証し、失敗したら最大 2 回まで再試行する共通ループ。TS 版 withRetry の移植。
+/// LLM 出力を検証し、失敗したら最大 2 回まで再試行する共通ループ。
 pub async fn analyze(
     analyzer: &dyn Analyzer,
     text: &str,
@@ -206,8 +205,8 @@ impl Backend {
     }
 }
 
-/// 環境変数から backend を組み立てる。既定は none。判定・エラーメッセージは TS 版と一致。
-/// 欠落/未知値は起動時エラー (TS も createApp で throw)。
+/// 環境変数から backend を組み立てる。既定は none。
+/// 欠落/未知値は起動時エラーとする。
 pub fn create_analyzer_from_env() -> Backend {
     let backend = std::env::var("ANALYZE_BACKEND").unwrap_or_else(|_| "none".into());
     match backend.as_str() {

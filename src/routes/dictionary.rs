@@ -1,4 +1,4 @@
-// 読み替え辞書 CRUD。TS 版 src-ts/routes/dictionary.ts を契約互換に移植。
+// 読み替え辞書 CRUD。surface (表記) をキーに upsert し、reading (読み) を返す。
 
 use crate::db::now_iso;
 use crate::error::AppError;

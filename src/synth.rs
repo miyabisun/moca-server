@@ -1,5 +1,5 @@
 // 音声合成パイプ: 合成の直列化 (SynthQueue) + voicepeak 起動 + セグメント合成。
-// bash 版 bin/moca-say + bin/moca-render の役割を Rust に内蔵する。
+// テキストの文分割・台本セグメントごとの voicepeak 起動をサーバー内で完結させる。
 
 use crate::opus::OpusStream;
 use crate::wav::{extract_pcm, wav_header, MOCA_FORMAT};
@@ -13,7 +13,7 @@ use tokio::sync::{Mutex, MutexGuard};
 
 // 48000Hz * 16bit * 1ch = 96000 bytes/s → 96 bytes/ms。
 const BYTES_PER_MS: usize = 96;
-// voicepeak は稀に起動直後に失敗するため、bin/moca-render と同じ最大 3 回リトライする。
+// voicepeak は稀に起動直後に失敗するため、セグメントごとに最大 3 回リトライする。
 const MAX_ATTEMPTS: usize = 3;
 
 /// 合成のサーバー全体直列化キュー。
@@ -67,7 +67,7 @@ pub struct SynthConfig {
     pub narrator: String,
 }
 
-/// text/plain を文単位に分割する。bin/moca-say と同じ規則:
+/// text/plain を文単位に分割する。規則:
 /// 「。！？の直後」と「改行の直後」で区切り、区切り文字は前セグメント末尾に残す。
 /// 空白 (半角 space / 全角　) のみの断片はスキップする。
 pub fn split_sentences(text: &str) -> Vec<String> {
@@ -202,7 +202,7 @@ pub async fn stream_synthesis(
     }
 }
 
-/// WAV 経路 (R2 実装): ヘッダ + 各 PCM + pause 無音をそのまま送る。
+/// WAV 経路 (動画素材用の可逆出力): ヘッダ + 各 PCM + pause 無音をそのまま送る。
 async fn stream_wav(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<Bytes, std::io::Error>>) {
     // 最初にヘッダを送る → 1 文目完成時点で再生が始まる体感を保つ。
     if tx
@@ -295,7 +295,7 @@ async fn synth_or_abort(
             Ok(p) => Some(p),
             Err(e) => {
                 // 3 リトライ後も失敗。ヘッダ送信済みでステータス変更不可なので
-                // エラーフレームを送ってボディをエラー終了させる (TS 版と同挙動)。
+                // エラーフレームを送ってボディをエラー終了させる。
                 tracing::error!("synth aborted: {e}");
                 let _ = tx.send(Err(std::io::Error::other(e))).await;
                 None

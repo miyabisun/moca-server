@@ -1,5 +1,6 @@
-// 台本 (script) JSON のスキーマ検証。TS 版 src-ts/script.ts の validateScript 相当。
-// smoothScript / extractJson / toJsonl は R3 で移植する (今回は未使用のため入れない)。
+// 台本 (script) JSON のスキーマ検証・平滑化・抽出。
+// validate_script で範囲クランプ/未知軸除去、smooth_script で感情の指数移動平均、
+// extract_json で LLM 出力から JSON 配列を切り出す。
 
 use crate::error::AppError;
 use serde_json::{Map, Value};
@@ -109,7 +110,7 @@ fn round_i64(n: f64) -> i64 {
     js_round(n) as i64
 }
 
-/// 感情の急変をなじませる指数移動平均。TS 版 smoothScript の移植。
+/// 感情の急変をなじませる指数移動平均。
 ///   実効値[i] = (1 - w) × 自身の値 + w × 実効値[i-1]   (w = i==0 ? 0 : carry)
 /// 感情軸は未指定=0、speed=100 / pitch=0 が基準値。carry<=0 で無変換。
 /// pause は EMA 対象外でそのまま透過する。
@@ -186,7 +187,7 @@ fn truncate_chars(text: &str, max: usize) -> &str {
     &text[..end]
 }
 
-/// LLM 応答から JSON 部分 (配列 or オブジェクト) を取り出す。TS 版 extractJson の移植。
+/// LLM 応答から JSON 部分 (配列 or オブジェクト) を取り出す。
 pub fn extract_json(text: &str) -> Result<Value, ScriptError> {
     // JSON 構造文字は ASCII なのでバイトオフセットで char 境界問題は起きない。
     let starts: Vec<usize> = [text.find('['), text.find('{')].into_iter().flatten().collect();
@@ -262,7 +263,7 @@ mod tests {
         assert!(validate_script(&json!([{ "text": "  " }])).is_err());
     }
 
-    // --- smooth_script (src-ts/script.test.ts 相当) ---
+    // --- smooth_script ---
 
     #[test]
     fn smooth_emotion_decays_by_carry() {
@@ -301,7 +302,7 @@ mod tests {
         assert_eq!(out[1].get("pause"), None);
     }
 
-    // --- extract_json (src-ts/script.test.ts 相当) ---
+    // --- extract_json ---
 
     #[test]
     fn extract_json_from_code_fence() {

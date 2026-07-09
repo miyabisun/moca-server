@@ -1,4 +1,4 @@
-// プロジェクト CRUD。TS 版 src-ts/routes/projects.ts を契約互換に移植。
+// プロジェクト CRUD。作成/一覧/取得/リネーム/削除 (削除は行をカスケード)。
 
 use crate::db::now_iso;
 use crate::error::AppError;
