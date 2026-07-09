@@ -36,7 +36,6 @@ claude -p による感情パラメータの自動生成に対応。
 | `POST /say` (application/json) | 台本JSONを感情パラメータ付きで合成 (既定 Opus / `Accept: audio/wav` で WAV) |
 | `GET /say?text=...` | text/plain 版と同じ (ブラウザの `<audio>` 向け) |
 | `GET /api/projects/:id/lines/:lineId/audio.wav` | 保存済みの行を合成して WAV で返す (動画素材は可逆が正なので Accept 不問で常に WAV)。acting かつ script があれば台本経路、それ以外は text 文分割経路 |
-| `GET /api/fingerprint` | 合成環境のハッシュを JSON で返す (voicepeak バイナリ / ナレーター / 辞書 / server 版)。素材が同じなら値が一致し、辞書などが変わると変化する。動画パイプの再合成要否判定に使う |
 | `POST /notify` (text/plain) | 本文を購読中の SPA に broadcast する。空文字は 400、それ以外は 204。永続化・再送なし (誰も購読していなければ捨てる) |
 | `GET /notify/stream` | text/event-stream。通知購読の SSE ストリーム (管理画面ヘッダーのメガホン ON で接続) |
 

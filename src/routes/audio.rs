@@ -1,7 +1,6 @@
 // 動画パイプ向けの合成 API。
 //   GET /api/projects/{id}/lines/{lineId}/audio.wav — 保存済みの行を合成し WAV で返す
 //     (動画素材は可逆が正なので Accept 不問で常に WAV)。
-//   GET /api/fingerprint — 合成環境のハッシュ (voicepeak / narrator / 辞書 / server) を返す。
 
 use crate::dictionary::{apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry};
 use crate::error::AppError;
@@ -11,17 +10,14 @@ use crate::synth::{split_sentences, OutputFormat};
 use axum::extract::{Path, State};
 use axum::response::Response;
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::Router;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 
 pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/api/projects/{id}/lines/{lineId}/audio.wav",
-            get(audio_wav),
-        )
-        .route("/api/fingerprint", get(fingerprint))
+    Router::new().route(
+        "/api/projects/{id}/lines/{lineId}/audio.wav",
+        get(audio_wav),
+    )
 }
 
 /// 保存済みの行を合成し WAV でチャンク配信する。
@@ -66,65 +62,6 @@ fn stored_script_segments(script: &str, entries: &[DictEntry]) -> Result<Vec<Val
         .as_array()
         .ok_or_else(|| AppError::Internal("stored script is not an array".into()))?;
     Ok(apply_dictionary_to_segments(arr, entries))
-}
-
-/// sha256 ダイジェストの先頭 `bytes` バイトを 16 進文字列で返す。
-fn sha256_prefix(data: &[u8], bytes: usize) -> String {
-    let digest = Sha256::digest(data);
-    let mut s = String::with_capacity(bytes * 2);
-    for b in digest.iter().take(bytes) {
-        s.push_str(&format!("{b:02x}"));
-    }
-    s
-}
-
-/// 合成環境のハッシュを返す。voicepeak バイナリ・ナレーター・辞書・サーバー版を素材にする。
-async fn fingerprint(State(state): State<AppState>) -> Result<Json<Value>, AppError> {
-    // voicepeak バイナリの sha256 (先頭16hex)。読み取りのみ (起動しない)。初回だけ計算しキャッシュ。
-    let voicepeak = state
-        .vp_fingerprint
-        .get_or_init(|| {
-            let path = state.config.voicepeak_path.clone();
-            async move {
-                match tokio::fs::read(&path).await {
-                    Ok(bytes) => sha256_prefix(&bytes, 8),
-                    Err(_) => "unavailable".to_string(),
-                }
-            }
-        })
-        .await
-        .clone();
-
-    // 辞書: surface/reading を id 順に決定的セパレータで連結して sha256 (先頭16hex)。
-    let dict_material = {
-        let conn = state.db.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT surface, reading FROM dictionary ORDER BY id")?;
-        let rows = stmt.query_map([], |r| {
-            let surface: String = r.get(0)?;
-            let reading: String = r.get(1)?;
-            Ok(format!("{surface}\u{1f}{reading}"))
-        })?;
-        let lines: Vec<String> = rows.collect::<rusqlite::Result<_>>()?;
-        lines.join("\u{1e}")
-    };
-    let dictionary = sha256_prefix(dict_material.as_bytes(), 8);
-
-    let narrator = state.config.narrator.clone();
-    let server = env!("CARGO_PKG_VERSION").to_string();
-
-    // fingerprint 本体: components を安定順序で連結した文字列の sha256 (full 64hex)。
-    let combined = format!("{voicepeak}{narrator}{dictionary}{server}");
-    let fingerprint = sha256_prefix(combined.as_bytes(), 32);
-
-    Ok(Json(json!({
-        "fingerprint": fingerprint,
-        "components": {
-            "voicepeak": voicepeak,
-            "narrator": narrator,
-            "dictionary": dictionary,
-            "server": server,
-        }
-    })))
 }
 
 #[cfg(test)]
@@ -216,7 +153,6 @@ mod tests {
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
             notify,
-            vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 
@@ -264,11 +200,6 @@ mod tests {
         let status = res.status();
         let bytes = res.into_body().collect().await.unwrap().to_bytes();
         (status, bytes.to_vec())
-    }
-
-    async fn json_body(app: &Router, uri: &str) -> Value {
-        let (_, bytes) = send(app, uri).await;
-        serde_json::from_slice(&bytes).unwrap()
     }
 
     fn riff_prefix() -> Vec<u8> {
@@ -351,35 +282,5 @@ mod tests {
         let app = routes().with_state(state);
         let (status, _) = send(&app, "/api/projects/abc/lines/1/audio.wav").await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn fingerprint_is_stable_and_unavailable_when_binary_missing() {
-        // 不在パス → voicepeak component は "unavailable"、200 で返る。
-        let state = state_with("/nonexistent/voicepeak".into());
-        let app = routes().with_state(state);
-        let a = json_body(&app, "/api/fingerprint").await;
-        let b = json_body(&app, "/api/fingerprint").await;
-        assert_eq!(a, b); // 安定性
-        assert_eq!(a["components"]["voicepeak"], "unavailable");
-        assert_eq!(a["fingerprint"].as_str().unwrap().len(), 64);
-    }
-
-    #[tokio::test]
-    async fn fingerprint_changes_when_dictionary_changes() {
-        let state = state_with("/nonexistent/voicepeak".into());
-        let dict_before;
-        let fp_before;
-        {
-            let app = routes().with_state(state.clone());
-            let v = json_body(&app, "/api/fingerprint").await;
-            dict_before = v["components"]["dictionary"].as_str().unwrap().to_string();
-            fp_before = v["fingerprint"].as_str().unwrap().to_string();
-        }
-        insert_dict(&state, "GPU", "ジーピーユー");
-        let app = routes().with_state(state);
-        let v = json_body(&app, "/api/fingerprint").await;
-        assert_ne!(v["components"]["dictionary"].as_str().unwrap(), dict_before);
-        assert_ne!(v["fingerprint"].as_str().unwrap(), fp_before);
     }
 }

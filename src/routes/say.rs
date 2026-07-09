@@ -236,7 +236,6 @@ mod tests {
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
             notify,
-            vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
         }
     }
 

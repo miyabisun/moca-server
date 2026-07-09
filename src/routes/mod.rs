@@ -92,7 +92,6 @@ mod tests {
             synth: Arc::new(crate::synth::SynthQueue::new()),
             analyzer: Arc::new(analyzer),
             notify,
-            vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
         };
         build_router(state)
     }

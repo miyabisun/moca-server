@@ -35,7 +35,6 @@ async fn main() {
         synth: Arc::new(SynthQueue::new()),
         analyzer: Arc::new(analyzer),
         notify,
-        vp_fingerprint: Arc::new(tokio::sync::OnceCell::new()),
     };
 
     let app = routes::build_router(state);
