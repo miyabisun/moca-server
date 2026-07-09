@@ -39,54 +39,8 @@ jobs:
             moca-server-linux-x86_64.sha256
             client-build.tar.gz
 
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-      - name: Build SPA
-        run: cd client && bun install && bun run build
-
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Build release binary
-        # audiopus_sys は libopus が無ければバンドルソースを cmake でビルドする。
-        # cmake は windows-latest ランナーに標準搭載。
-        run: cargo build --release
-
-      - name: Package artifacts
-        shell: pwsh
-        run: |
-          Copy-Item target/release/moca-server.exe moca-server-windows-x86_64.exe
-          (Get-FileHash moca-server-windows-x86_64.exe -Algorithm SHA256).Hash.ToLower() + "  moca-server-windows-x86_64.exe" | Out-File -Encoding ascii moca-server-windows-x86_64.exe.sha256
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            moca-server-windows-x86_64.exe
-            moca-server-windows-x86_64.exe.sha256
-
-  docker:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/miyabisun/moca-server:latest
-            ghcr.io/miyabisun/moca-server:${{ github.ref_name }}
+  # Windows job は撤去済み (2026-07-10)。audiopus_sys 0.2.2 同梱 opus の
+  # CMakeLists が CMake 4.x の最低バージョン要件で拒否されるため。
+  # 復活させる時は env に CMAKE_POLICY_VERSION_MINIMUM=3.5 を足すと通る見込み。
+  # Docker job も撤去済み: VOICEPEAK がコンテナ内でのみ合成を拒否する
+  # (コンテナ検知と思われる) ため、配布はネイティブバイナリのみとする。
