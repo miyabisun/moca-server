@@ -1,6 +1,7 @@
 // 行 (lines) CRUD + 並べ替え + 流し込み。TS 版 src-ts/routes/lines.ts を契約互換に移植。
 // import の acting モードは analyzer (R3) 依存のため 501 を返す。
 
+use crate::analyze::DEFAULT_CARRY;
 use crate::db::now_iso;
 use crate::error::AppError;
 use crate::script::serialize_script;
@@ -9,10 +10,14 @@ use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{patch, post, put};
 use axum::{Json, Router};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
+use std::convert::Infallible;
+use tokio_stream::wrappers::ReceiverStream;
 
 use super::{parse_body, parse_id, JsonResult};
 
@@ -263,63 +268,65 @@ async fn reorder(
     Ok((StatusCode::OK, Json(Value::Array(rows))))
 }
 
-// テキスト流し込み。改行で分割し空行は無視。announcer は一括 insert して即返す。
-// acting は R3 (analyzer/SSE) 依存のため 501 を返す。
+// テキスト流し込み。改行で分割し空行は無視。after 指定は両モード共通で前処理する。
+//   announcer: 全行を一括 insert して JSON で即返す。
+//   acting:    1 行ずつ analyze しながら SSE で進捗を push (失敗行は announcer として保存)。
 async fn import(
     State(state): State<AppState>,
     Path(id): Path<String>,
     body: Bytes,
-) -> JsonResult {
+) -> Result<Response, AppError> {
     let project_id = parse_id(&id)?;
     let body = parse_body(&body);
-
-    let conn = state.db.lock().unwrap();
-    if !project_exists(&conn, project_id)? {
-        return Err(AppError::NotFound("not found".into()));
-    }
-
-    if body.get("mode").and_then(Value::as_str) == Some("acting") {
-        return Err(AppError::NotImplemented(
-            "acting import not implemented".into(),
-        ));
-    }
+    let acting = body.get("mode").and_then(Value::as_str) == Some("acting");
 
     let raw = body.get("text").and_then(Value::as_str).unwrap_or("");
     // TS: split(/\r?\n/).map(trim).filter(Boolean)。trim() は末尾 \r も除く。
-    let texts: Vec<&str> = raw
+    let texts: Vec<String> = raw
         .split('\n')
         .map(str::trim)
         .filter(|s| !s.is_empty())
+        .map(str::to_string)
         .collect();
 
-    let mut start_pos = next_position(&conn, project_id)?;
-    if !texts.is_empty() {
-        if let Some(after) = body.get("after") {
-            if !after.is_null() {
-                if let Some(after_id) = to_number(after).map(|n| n as i64) {
-                    let after_row = get_line(&conn, after_id)?;
-                    if let Some(after_row) = after_row {
-                        if after_row.project_id == project_id {
-                            conn.execute(
-                                "UPDATE lines SET position = position + ?1 \
-                                 WHERE project_id = ?2 AND position > ?3",
-                                (texts.len() as i64, project_id, after_row.position),
-                            )?;
-                            start_pos = after_row.position + 1;
+    // 位置計算と after シフトは両モード共通 (DB ロックは .await をまたがせない)。
+    let start_pos = {
+        let conn = state.db.lock().unwrap();
+        if !project_exists(&conn, project_id)? {
+            return Err(AppError::NotFound("not found".into()));
+        }
+
+        let mut start_pos = next_position(&conn, project_id)?;
+        if !texts.is_empty() {
+            if let Some(after) = body.get("after") {
+                if !after.is_null() {
+                    if let Some(after_id) = to_number(after).map(|n| n as i64) {
+                        if let Some(after_row) = get_line(&conn, after_id)? {
+                            if after_row.project_id == project_id {
+                                conn.execute(
+                                    "UPDATE lines SET position = position + ?1 \
+                                     WHERE project_id = ?2 AND position > ?3",
+                                    (texts.len() as i64, project_id, after_row.position),
+                                )?;
+                                start_pos = after_row.position + 1;
+                            }
                         }
                     }
                 }
             }
         }
+        start_pos
+    };
+
+    if acting {
+        return Ok(import_acting(state, project_id, texts, start_pos));
     }
 
+    // announcer: 一括 insert して JSON で即返す。
+    let conn = state.db.lock().unwrap();
     if texts.is_empty() {
-        return Ok((
-            StatusCode::OK,
-            Json(json!({ "mode": "announcer", "created": [] })),
-        ));
+        return Ok((StatusCode::OK, Json(json!({ "mode": "announcer", "created": [] }))).into_response());
     }
-
     let mut created: Vec<Value> = Vec::with_capacity(texts.len());
     for (i, text) in texts.iter().enumerate() {
         let row = conn.query_row(
@@ -332,8 +339,73 @@ async fn import(
         created.push(serialize_line(&row));
     }
     touch_project(&conn, project_id)?;
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "mode": "announcer", "created": created })),
-    ))
+    Ok((StatusCode::OK, Json(json!({ "mode": "announcer", "created": created }))).into_response())
+}
+
+// acting 流し込み: SSE で 1 行ずつ進捗を流す。分析失敗行は announcer として保存し、
+// クライアント切断 (受信側 drop) で中断する (保存済み行は残す)。
+fn import_acting(
+    state: AppState,
+    project_id: i64,
+    texts: Vec<String>,
+    start_pos: i64,
+) -> Response {
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(4);
+
+    tokio::spawn(async move {
+        let total = texts.len();
+        for (i, text) in texts.iter().enumerate() {
+            if tx.is_closed() {
+                break; // クライアント切断。保存済み行は残す。
+            }
+
+            // 分析は DB ロック外で await する (Mutex ガードを .await にまたがせない)。
+            let analyzed = state.analyzer.analyze(text, DEFAULT_CARRY).await;
+            let (mode, script) = match &analyzed {
+                Ok(script) => ("acting", Some(script.to_string())),
+                Err(_) => ("announcer", None), // 失敗はデータを失わず announcer 保存。
+            };
+
+            let row = {
+                let conn = state.db.lock().unwrap();
+                conn.query_row(
+                    "INSERT INTO lines (project_id, position, mode, text, script) \
+                     VALUES (?1, ?2, ?3, ?4, ?5) \
+                     RETURNING id, project_id, position, mode, text, script",
+                    (project_id, start_pos + i as i64, mode, text, &script),
+                    LineRow::from_row,
+                )
+            };
+            let row = match row {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("import acting insert failed: {e}");
+                    break;
+                }
+            };
+
+            let status = if mode == "acting" { "done" } else { "failed" };
+            let payload = json!({
+                "index": i + 1,
+                "total": total,
+                "status": status,
+                "line": serialize_line(&row),
+            });
+            if tx.send(Ok(Event::default().data(payload.to_string()))).await.is_err() {
+                break; // 受信側 drop = クライアント切断。
+            }
+        }
+
+        if total > 0 {
+            let conn = state.db.lock().unwrap();
+            let _ = touch_project(&conn, project_id);
+        }
+        let _ = tx
+            .send(Ok(Event::default()
+                .event("complete")
+                .data(json!({ "total": total }).to_string())))
+            .await;
+    });
+
+    Sse::new(ReceiverStream::new(rx)).into_response()
 }

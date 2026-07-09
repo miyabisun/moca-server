@@ -1,5 +1,7 @@
+mod analyze;
 mod dictionary;
 mod lines;
+mod notify;
 mod projects;
 mod say;
 
@@ -9,7 +11,7 @@ use crate::state::AppState;
 use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use serde_json::{json, Value};
 use tower_http::services::ServeDir;
@@ -38,23 +40,12 @@ pub fn build_router(state: AppState) -> Router {
         .merge(lines::routes())
         .merge(dictionary::routes())
         .merge(say::routes())
-        .merge(placeholder_routes())
+        .merge(analyze::routes())
+        .merge(notify::routes())
         .nest_service("/assets", ServeDir::new("client/build/assets"))
         .fallback_service(get(spa_fallback))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
-}
-
-// R3 で実装する音声系エンドポイント。差し替えの印として 404 ではなく 501 を返す。
-fn placeholder_routes() -> Router<AppState> {
-    Router::new()
-        .route("/analyze", post(not_implemented))
-        .route("/notify", post(not_implemented))
-        .route("/notify/stream", get(not_implemented))
-}
-
-async fn not_implemented() -> AppError {
-    AppError::NotImplemented("not implemented".into())
 }
 
 // 非 API GET のフォールバック: SPA の index.html を返す。未ビルドなら 404 JSON。
@@ -81,8 +72,13 @@ mod tests {
     use tower::ServiceExt;
 
     fn app() -> Router {
+        app_with_analyzer(crate::analyze::Backend::None)
+    }
+
+    fn app_with_analyzer(analyzer: crate::analyze::Backend) -> Router {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn);
+        let (notify, _) = tokio::sync::broadcast::channel::<String>(16);
         let state = AppState {
             db: Arc::new(Mutex::new(conn)),
             config: Config {
@@ -92,6 +88,8 @@ mod tests {
                 narrator: "Miyamai Moca".into(),
             },
             synth: Arc::new(crate::synth::SynthQueue::new()),
+            analyzer: Arc::new(analyzer),
+            notify,
         };
         build_router(state)
     }
@@ -394,12 +392,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn import_acting_is_501() {
+    async fn import_acting_none_backend_falls_back_to_announcer() {
+        // 既定 app() の analyzer は Backend::None なので全行が分析失敗 → announcer 保存。
         let app = app();
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, _) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "acting", "text": "文一\n文二" }))).await;
-        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/projects/{id}/import"))
+            .header("content-type", "application/json")
+            .body(Body::from(json!({ "mode": "acting", "text": "文一\n文二" }).to_string()))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert!(res
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/event-stream"));
+        let body = String::from_utf8(
+            res.into_body().collect().await.unwrap().to_bytes().to_vec(),
+        )
+        .unwrap();
+        assert!(body.contains("\"status\":\"failed\""), "body: {body}");
+
+        // 失敗行も announcer として保存され、元テキストが残る。
+        let (_, single) = req_get(&app, id).await;
+        let lines = single["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| l["mode"] == "announcer" && l["script"] == Value::Null));
+        assert_eq!(lines[0]["text"], "文一");
+    }
+
+    async fn req_get(app: &Router, project_id: i64) -> (StatusCode, Value) {
+        req(app, Method::GET, &format!("/api/projects/{project_id}"), None).await
     }
 
     #[tokio::test]
@@ -459,15 +487,174 @@ mod tests {
     // --- placeholders / spa ---
 
     #[tokio::test]
-    async fn voice_endpoints_are_501() {
+    async fn analyze_empty_text_is_400() {
         let app = app();
-        for (method, uri) in [
-            (Method::POST, "/analyze"),
-            (Method::POST, "/notify"),
-            (Method::GET, "/notify/stream"),
-        ] {
-            let (status, _) = req(&app, method.clone(), uri, None).await;
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{method} {uri}");
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/analyze")
+            .body(Body::from("   "))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn analyze_none_backend_is_502() {
+        let app = app();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/analyze")
+            .body(Body::from("なにか読み上げて"))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn analyze_carry_out_of_range_is_400() {
+        let app = app();
+        for carry in ["-0.1", "1.0", "abc"] {
+            let req = Request::builder()
+                .method(Method::POST)
+                .uri(format!("/analyze?carry={carry}"))
+                .body(Body::from("本文"))
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            assert_eq!(res.status(), StatusCode::BAD_REQUEST, "carry={carry}");
         }
+    }
+
+    #[tokio::test]
+    async fn notify_empty_is_400_and_broadcast_is_204() {
+        let app = app();
+        let empty = Request::builder()
+            .method(Method::POST)
+            .uri("/notify")
+            .body(Body::from(""))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(empty).await.unwrap().status(),
+            StatusCode::BAD_REQUEST
+        );
+
+        // 購読者ゼロでも 204 (fire-and-forget)。
+        let post = Request::builder()
+            .method(Method::POST)
+            .uri("/notify")
+            .body(Body::from("誰も聞いていない"))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(post).await.unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
+    }
+
+    // SSE ボディから最初の data 行を 1 つ読む (永続ストリームなので全読みしない)。
+    async fn read_first_sse_data(body: Body) -> String {
+        use tokio_stream::StreamExt;
+        let mut stream = body.into_data_stream();
+        loop {
+            let chunk = stream.next().await.unwrap().unwrap();
+            let text = String::from_utf8_lossy(&chunk);
+            for line in text.lines() {
+                if let Some(d) = line.strip_prefix("data:") {
+                    return d.trim().to_string();
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_broadcasts_to_all_subscribers() {
+        let app = app();
+        // 2 つ購読 (ハンドラ内で subscribe 済みの状態でレスポンスが返る)。
+        let sub1 = app
+            .clone()
+            .oneshot(Request::builder().uri("/notify/stream").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let sub2 = app
+            .clone()
+            .oneshot(Request::builder().uri("/notify/stream").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(sub1
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/event-stream"));
+
+        // 発火。
+        let post = Request::builder()
+            .method(Method::POST)
+            .uri("/notify")
+            .body(Body::from("テスト通知"))
+            .unwrap();
+        assert_eq!(
+            app.clone().oneshot(post).await.unwrap().status(),
+            StatusCode::NO_CONTENT
+        );
+
+        assert_eq!(read_first_sse_data(sub1.into_body()).await, "テスト通知");
+        assert_eq!(read_first_sse_data(sub2.into_body()).await, "テスト通知");
+    }
+
+    // --- import acting (SSE, フェイク cli analyzer) ---
+
+    fn cli_analyzer(cmd: &str) -> crate::analyze::Backend {
+        crate::analyze::Backend::Cli(crate::analyze::CliAnalyzer::new(cmd.to_string()))
+    }
+
+    async fn import_body(app: &Router, project_id: i64, body: Value) -> (StatusCode, String) {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/projects/{project_id}/import"))
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let res = app.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let text = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        (status, text)
+    }
+
+    #[tokio::test]
+    async fn import_acting_streams_progress_and_saves_acting() {
+        let app = app_with_analyzer(cli_analyzer("cat >/dev/null; echo '[{\"text\":\"こんにちは。\",\"emotion\":{\"honwaka\":60}}]'"));
+        let p = create_project(&app, "import").await;
+        let id = p["id"].as_i64().unwrap();
+        let (status, body) = import_body(&app, id, json!({ "mode": "acting", "text": "文一\n文二" })).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // 2 件の done 進捗 + complete。
+        assert_eq!(body.matches("\"status\":\"done\"").count(), 2);
+        assert!(body.contains("\"index\":1"));
+        assert!(body.contains("\"index\":2"));
+        assert!(body.contains("event:complete") || body.contains("event: complete"));
+
+        let (_, single) = req_get(&app, id).await;
+        let lines = single["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 2);
+        assert!(lines.iter().all(|l| l["mode"] == "acting" && l["script"] != Value::Null));
+    }
+
+    #[tokio::test]
+    async fn import_acting_failed_line_saved_as_announcer() {
+        // JSON を返さない analyzer → 分析失敗 → announcer フォールバック。
+        let app = app_with_analyzer(cli_analyzer("cat >/dev/null; echo ごめんなさい"));
+        let p = create_project(&app, "import").await;
+        let id = p["id"].as_i64().unwrap();
+        let (status, body) = import_body(&app, id, json!({ "mode": "acting", "text": "失敗する文" })).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("\"status\":\"failed\""), "body: {body}");
+
+        let (_, single) = req_get(&app, id).await;
+        let lines = single["lines"].as_array().unwrap();
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["mode"], "announcer");
+        assert_eq!(lines[0]["text"], "失敗する文");
+        assert_eq!(lines[0]["script"], Value::Null);
     }
 }

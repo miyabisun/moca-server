@@ -5,10 +5,10 @@ use crate::dictionary::{apply_dictionary, load_dictionary, DictEntry};
 use crate::error::AppError;
 use crate::script::validate_script;
 use crate::state::AppState;
-use crate::synth::{split_sentences, stream_synthesis, SynthConfig};
+use crate::synth::{split_sentences, stream_synthesis, OutputFormat, SynthConfig};
 use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, Method};
 use axum::response::Response;
 use axum::routing::get;
@@ -42,7 +42,18 @@ async fn say(
         build_plain_segments(&state, &method, &query, &body)?
     };
 
-    Ok(stream_response(&state, segments))
+    // 既定は Ogg/Opus (帯域 1/12)。Accept: audio/wav は R2 の WAV 経路 (動画素材用の可逆)。
+    let wants_wav = headers
+        .get(ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|a| a.contains("audio/wav"));
+    let format = if wants_wav {
+        OutputFormat::Wav
+    } else {
+        OutputFormat::Opus
+    };
+
+    Ok(stream_response(&state, segments, format))
 }
 
 // 辞書エントリを読む。DB ロックは .await をまたがせない (Send 制約) ため関数内で完結させる。
@@ -110,20 +121,25 @@ fn build_plain_segments(
 }
 
 // 合成タスクを spawn し、mpsc を Body::from_stream に繋いで即レスポンスを返す。
-fn stream_response(state: &AppState, segments: Vec<Value>) -> Response {
+fn stream_response(state: &AppState, segments: Vec<Value>, format: OutputFormat) -> Response {
     let synth = Arc::clone(&state.synth);
     let cfg = SynthConfig {
         voicepeak_path: state.config.voicepeak_path.clone(),
         narrator: state.config.narrator.clone(),
     };
 
+    let content_type = match format {
+        OutputFormat::Wav => "audio/wav",
+        OutputFormat::Opus => "audio/ogg",
+    };
+
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(4);
-    tokio::spawn(stream_synthesis(synth, cfg, segments, tx));
+    tokio::spawn(stream_synthesis(synth, cfg, segments, format, tx));
 
     let mut response = Response::new(Body::from_stream(ReceiverStream::new(rx)));
     response
         .headers_mut()
-        .insert(CONTENT_TYPE, HeaderValue::from_static("audio/wav"));
+        .insert(CONTENT_TYPE, HeaderValue::from_static(content_type));
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -223,6 +239,7 @@ mod tests {
     fn state_with(fake: &Fake) -> AppState {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::init(&conn);
+        let (notify, _) = tokio::sync::broadcast::channel::<String>(16);
         AppState {
             db: Arc::new(Mutex::new(conn)),
             config: Config {
@@ -232,6 +249,8 @@ mod tests {
                 narrator: "Test".into(),
             },
             synth: Arc::new(SynthQueue::new()),
+            analyzer: Arc::new(crate::analyze::Backend::None),
+            notify,
         }
     }
 
@@ -264,6 +283,27 @@ mod tests {
             .unwrap()
     }
 
+    // Accept: audio/wav 版。R2 の WAV 経路を検証する (バイト長が決定的)。
+    fn post_text_wav(uri: &str, body: &str) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("content-type", "text/plain")
+            .header("accept", "audio/wav")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
+    fn post_json_wav(uri: &str, body: Value) -> Request<Body> {
+        Request::builder()
+            .method(Method::POST)
+            .uri(uri)
+            .header("content-type", "application/json")
+            .header("accept", "audio/wav")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    }
+
     fn post_json(uri: &str, body: Value) -> Request<Body> {
         Request::builder()
             .method(Method::POST)
@@ -286,26 +326,38 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_text_returns_wav() {
+    async fn post_text_default_is_ogg_opus() {
         let fake = make_fake(0.0);
         let app = app_with(&fake);
         let res = app.clone().oneshot(post_text("/say", "こんにちは。")).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
-        assert_eq!(res.headers().get(CONTENT_TYPE).unwrap(), "audio/wav");
+        assert_eq!(res.headers().get(CONTENT_TYPE).unwrap(), "audio/ogg");
         assert_eq!(res.headers().get(CACHE_CONTROL).unwrap(), "no-store");
         let body = res.into_body().collect().await.unwrap().to_bytes();
+        // Ogg マジックで始まる (OpusHead ページ)。
+        assert_eq!(&body[0..4], b"OggS");
+    }
+
+    #[tokio::test]
+    async fn accept_wav_returns_riff() {
+        let fake = make_fake(0.0);
+        let app = app_with(&fake);
+        let res = app.clone().oneshot(post_text_wav("/say", "こんにちは。")).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        assert_eq!(res.headers().get(CONTENT_TYPE).unwrap(), "audio/wav");
+        let body = res.into_body().collect().await.unwrap().to_bytes();
         assert!(body.starts_with(&header_prefix()));
-        // ヘッダ + 1 セグメント分の PCM。
+        // ヘッダ + 1 セグメント分の PCM (WAV 経路はバイト長が決定的)。
         assert_eq!(body.len(), 44 + PCM_LEN);
     }
 
     #[tokio::test]
-    async fn get_with_text_query_returns_wav() {
+    async fn get_with_text_query_default_is_ogg_opus() {
         let fake = make_fake(0.0);
         let app = app_with(&fake);
         let (status, body) = send(&app, get("/say?text=%E3%81%82")).await;
         assert_eq!(status, StatusCode::OK);
-        assert!(body.starts_with(&header_prefix()));
+        assert_eq!(&body[0..4], b"OggS");
     }
 
     #[tokio::test]
@@ -365,10 +417,11 @@ mod tests {
 
     #[tokio::test]
     async fn json_calls_voicepeak_per_segment() {
+        // WAV 経路 (Accept: audio/wav) でバイト長を検証する (Opus はサイズ非決定的)。
         let fake = make_fake(0.0);
         let app = app_with(&fake);
         let script = json!([{ "text": "一。" }, { "text": "二。" }, { "text": "三。" }]);
-        let (status, body) = send(&app, post_json("/say", script)).await;
+        let (status, body) = send(&app, post_json_wav("/say", script)).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.starts_with(&header_prefix()));
         let count = std::fs::read_to_string(&fake.count).unwrap();
@@ -378,10 +431,11 @@ mod tests {
 
     #[tokio::test]
     async fn pause_adds_silence() {
+        // WAV 経路でバイト長を検証する。
         let fake = make_fake(0.0);
         let app = app_with(&fake);
         let script = json!([{ "text": "一。", "pause": 100 }]);
-        let (status, body) = send(&app, post_json("/say", script)).await;
+        let (status, body) = send(&app, post_json_wav("/say", script)).await;
         assert_eq!(status, StatusCode::OK);
         // ヘッダ + PCM + pause(100ms * 96)。
         assert_eq!(body.len(), 44 + PCM_LEN + 100 * 96);

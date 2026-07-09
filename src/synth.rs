@@ -1,6 +1,7 @@
 // 音声合成パイプ: 合成の直列化 (SynthQueue) + voicepeak 起動 + セグメント合成。
 // bash 版 bin/moca-say + bin/moca-render の役割を Rust に内蔵する。
 
+use crate::opus::OpusStream;
 use crate::wav::{extract_pcm, wav_header, MOCA_FORMAT};
 use axum::body::Bytes;
 use serde_json::Value;
@@ -177,17 +178,32 @@ async fn run_voicepeak(
     extract_pcm(&bytes)
 }
 
-/// セグメント列を順に合成し、WAV ヘッダ + 各 PCM + pause 無音を mpsc へ送る。
+/// 配信フォーマット。既定は Opus (帯域 1/12)、Accept: audio/wav で Wav (動画素材用の可逆)。
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat {
+    Wav,
+    Opus,
+}
+
+/// セグメント列を順に合成し、フォーマットに応じた音声フレームを mpsc へ送る。
 /// タスク先頭で synth.enter() してサーバー全体の合成を直列化する
 /// (ロックは全 voicepeak プロセス完了 = 本関数の終了まで保持)。
 pub async fn stream_synthesis(
     synth: Arc<SynthQueue>,
     cfg: SynthConfig,
     segments: Vec<Value>,
+    format: OutputFormat,
     tx: Sender<Result<Bytes, std::io::Error>>,
 ) {
     let _guard = synth.enter().await;
+    match format {
+        OutputFormat::Wav => stream_wav(&cfg, &segments, &tx).await,
+        OutputFormat::Opus => stream_opus(&cfg, &segments, &tx).await,
+    }
+}
 
+/// WAV 経路 (R2 実装): ヘッダ + 各 PCM + pause 無音をそのまま送る。
+async fn stream_wav(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<Bytes, std::io::Error>>) {
     // 最初にヘッダを送る → 1 文目完成時点で再生が始まる体感を保つ。
     if tx
         .send(Ok(Bytes::from(wav_header(&MOCA_FORMAT))))
@@ -197,19 +213,10 @@ pub async fn stream_synthesis(
         return; // 受信側 drop = クライアント切断。ロックを解放して終了。
     }
 
-    for seg in &segments {
-        let pcm = tokio::select! {
-            r = synthesize_segment(&cfg, seg) => match r {
-                Ok(p) => p,
-                Err(e) => {
-                    // 3 リトライ後も失敗。ヘッダ送信済みでステータス変更不可なので
-                    // エラーフレームを送ってボディをエラー終了させる (TS 版と同挙動)。
-                    tracing::error!("synth aborted: {e}");
-                    let _ = tx.send(Err(std::io::Error::other(e))).await;
-                    return;
-                }
-            },
-            _ = tx.closed() => return, // 受信側 drop = クライアント切断。合成タスクを中断し voicepeak を kill する。
+    for seg in segments {
+        let pcm = match synth_or_abort(cfg, seg, tx).await {
+            Some(p) => p,
+            None => return,
         };
         if tx.send(Ok(Bytes::from(pcm))).await.is_err() {
             return;
@@ -219,6 +226,82 @@ pub async fn stream_synthesis(
         if pause > 0 && tx.send(Ok(Bytes::from(silence_pcm(pause)))).await.is_err() {
             return;
         }
+    }
+}
+
+/// Opus 経路: PCM を Ogg/Opus へ逐次エンコードし、セグメント完了ごとに
+/// 出来上がった Ogg ページをチャンク送信する (セグメント間ストリーミング維持)。
+async fn stream_opus(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<Bytes, std::io::Error>>) {
+    let mut stream = match OpusStream::new() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("opus init failed: {e}");
+            let _ = tx.send(Err(std::io::Error::other(e))).await;
+            return;
+        }
+    };
+
+    // OpusHead / OpusTags ページを先に送る。
+    let header = stream.take_bytes();
+    if tx.send(Ok(Bytes::from(header))).await.is_err() {
+        return;
+    }
+
+    for seg in segments {
+        let pcm = match synth_or_abort(cfg, seg, tx).await {
+            Some(p) => p,
+            None => return,
+        };
+        // pause はエンコーダに 0 PCM として流す (Opus でも尺に反映)。
+        let pause = seg.get("pause").and_then(Value::as_u64).unwrap_or(0) as usize;
+        let encode = (|| {
+            stream.push_pcm(&pcm)?;
+            if pause > 0 {
+                stream.push_pcm(&silence_pcm(pause))?;
+            }
+            Ok::<(), String>(())
+        })();
+        if let Err(e) = encode {
+            tracing::error!("opus encode failed: {e}");
+            let _ = tx.send(Err(std::io::Error::other(e))).await;
+            return;
+        }
+        let page = stream.take_bytes();
+        if !page.is_empty() && tx.send(Ok(Bytes::from(page))).await.is_err() {
+            return;
+        }
+    }
+
+    // 端数フレームを flush して EOS ページを送る。
+    if let Err(e) = stream.finish() {
+        tracing::error!("opus finish failed: {e}");
+        let _ = tx.send(Err(std::io::Error::other(e))).await;
+        return;
+    }
+    let tail = stream.take_bytes();
+    if !tail.is_empty() {
+        let _ = tx.send(Ok(Bytes::from(tail))).await;
+    }
+}
+
+/// 1 セグメントを合成する。切断なら None を返し (タスク終了)、合成失敗ならエラーフレームを送って None。
+async fn synth_or_abort(
+    cfg: &SynthConfig,
+    seg: &Value,
+    tx: &Sender<Result<Bytes, std::io::Error>>,
+) -> Option<Vec<u8>> {
+    tokio::select! {
+        r = synthesize_segment(cfg, seg) => match r {
+            Ok(p) => Some(p),
+            Err(e) => {
+                // 3 リトライ後も失敗。ヘッダ送信済みでステータス変更不可なので
+                // エラーフレームを送ってボディをエラー終了させる (TS 版と同挙動)。
+                tracing::error!("synth aborted: {e}");
+                let _ = tx.send(Err(std::io::Error::other(e))).await;
+                None
+            }
+        },
+        _ = tx.closed() => None, // 受信側 drop = クライアント切断。合成タスクを中断し voicepeak を kill する。
     }
 }
 

@@ -1,7 +1,9 @@
+mod analyze;
 mod config;
 mod db;
 mod dictionary;
 mod error;
+mod opus;
 mod routes;
 mod script;
 mod serialize;
@@ -23,11 +25,16 @@ async fn main() {
 
     let config = Config::from_env();
     let conn = db::open(&config.db_path);
+    let analyzer = analyze::create_analyzer_from_env();
+    // 通知 broadcast。購読者ゼロでも send は Err になるだけで捨てられる (fire-and-forget)。
+    let (notify, _) = tokio::sync::broadcast::channel::<String>(64);
 
     let state = AppState {
         db: Arc::new(Mutex::new(conn)),
         config: config.clone(),
         synth: Arc::new(SynthQueue::new()),
+        analyzer: Arc::new(analyzer),
+        notify,
     };
 
     let app = routes::build_router(state);
