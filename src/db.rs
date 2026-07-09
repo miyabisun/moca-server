@@ -1,9 +1,20 @@
+use chrono::{SecondsFormat, Utc};
 use rusqlite::Connection;
+
+/// 現在時刻を TS 版 (`new Date().toISOString()`) と同じ ISO8601 ミリ秒+Z で返す。
+pub fn now_iso() -> String {
+    Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
 
 /// 起動時に raw SQL でテーブルを作る (TS 版 src-ts/lib/init.ts と同一スキーマ)。
 /// 日時は ISO8601 文字列で統一。
 pub fn open(path: &str) -> Connection {
     let conn = Connection::open(path).expect("Failed to open database");
+    // TS 版 (src-ts/db/index.ts) と同じ PRAGMA。in-memory では WAL は実質 no-op。
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
+    )
+    .expect("Failed to set pragmas");
     init(&conn);
     conn
 }

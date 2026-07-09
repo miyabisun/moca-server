@@ -1,7 +1,11 @@
 mod config;
 mod db;
+mod dictionary;
 mod error;
 mod routes;
+mod script;
+mod serialize;
+mod spa;
 mod state;
 
 use config::Config;
