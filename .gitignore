@@ -1,4 +1,5 @@
 node_modules/
+target/
 *.db
 *.db-wal
 *.db-shm
