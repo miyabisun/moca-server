@@ -1,8 +1,0 @@
-{
-  "name": "moca-server",
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "build:client": "cd client && bun install && bun run build"
-  }
-}

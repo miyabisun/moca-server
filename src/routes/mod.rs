@@ -56,7 +56,7 @@ async fn spa_fallback() -> Response {
         Some(html) => Html(html).into_response(),
         None => (
             StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Frontend not built. Run: bun run build:client" })),
+            Json(json!({ "error": "Frontend not built. Run: cd client && bun install && bun run build" })),
         )
             .into_response(),
     }
