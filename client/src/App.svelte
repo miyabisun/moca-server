@@ -49,6 +49,8 @@
 	let expandedIds = $state({});
 	// Yank register: a single memory slot, cross-project, never consumed by paste.
 	let yankRegister = $state(null); // { text, mode, script } | null
+	// NotifySubscribe instance, so the global `n` shortcut can call its toggle().
+	let notify;
 
 	async function loadProjects() {
 		projects = await api.listProjects();
@@ -445,6 +447,10 @@
 				return;
 			case 'l':
 				e.preventDefault();
+				// Boundary no-op: never move focus into an empty 台本 column (no project
+				// open, or a project with no lines) — the cursor ring would vanish with
+				// nothing to land on. Stay in the プロジェクト column so focus stays visible.
+				if (!selected?.lines?.length) return;
 				focusCol = 'line';
 				scrollCursorIntoView();
 				return;
@@ -460,6 +466,12 @@
 			case ' ':
 				e.preventDefault();
 				activateCursor();
+				return;
+			case 'n':
+				// Toggle the header notify megaphone from either column. Synchronous
+				// call preserves subscribe()'s Audio autoplay unlock (user gesture).
+				e.preventDefault();
+				notify?.toggle();
 				return;
 		}
 
@@ -523,7 +535,7 @@
 				辞書
 			</button>
 		</nav>
-		<NotifySubscribe />
+		<NotifySubscribe bind:this={notify} />
 	</header>
 
 	{#if activeTab === 'script'}

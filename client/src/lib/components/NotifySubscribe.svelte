@@ -64,7 +64,10 @@
 		es = null;
 	}
 
-	function toggle() {
+	// Exported so App.svelte's global `n` shortcut can drive the same toggle as the
+	// button. Called synchronously from the keydown handler (a user gesture), which
+	// keeps subscribe()'s Audio autoplay unlock valid — do not await before this.
+	export function toggle() {
 		subscribed = !subscribed;
 		if (subscribed) subscribe();
 		else unsubscribe();
