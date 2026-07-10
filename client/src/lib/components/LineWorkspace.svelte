@@ -19,7 +19,8 @@
 		onrequestDelete,
 		onmenu,
 		onToggleExpand,
-		onpourin
+		onpourin,
+		onhelp
 	} = $props();
 
 	let editingName = $state(false);
@@ -130,6 +131,9 @@
 		<button type="button" class="primary" onclick={onpourin}>
 			<Icon name="plus" /> 台本追加
 		</button>
+		<button type="button" class="help" aria-label="ショートカット一覧" onclick={onhelp}>
+			<Icon name="help" />
+		</button>
 	</div>
 </div>
 
@@ -191,9 +195,30 @@
 .footer
 	position: sticky
 	bottom: 0
+	display: flex
+	align-items: center
+	justify-content: space-between
 	padding: var(--sp-3)
 	border-top: 1px solid var(--c-border)
 	background: var(--c-bg)
+
+// Quiet icon-button (Modal .close recipe): 36px hit area, no fill, sub text color.
+.help
+	display: flex
+	align-items: center
+	justify-content: center
+	flex: none
+	width: 36px
+	height: 36px
+	padding: 0
+	border: none
+	border-radius: var(--radius-sm)
+	background: transparent
+	color: var(--c-text-sub)
+	cursor: pointer
+
+	&:hover
+		color: var(--c-text)
 
 .primary
 	display: inline-flex

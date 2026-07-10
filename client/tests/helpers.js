@@ -7,8 +7,35 @@
 // cursor-follow / paste-restore behaviour depends on that GET reflecting the
 // mutation. So writes mutate the store and GET /api/projects/:id serializes it.
 
+import { Buffer } from 'node:buffer';
+
 let idSeq = 0;
 const nextId = (prefix) => `${prefix}_${++idSeq}`;
+
+// A valid WAV blob of `seconds` of silence (8kHz mono 16-bit PCM). The default
+// /say mock body is empty, which makes el.play() reject/end instantly — unusable
+// for observing the playing indicator. A real, non-trivial clip lets play()
+// resolve and the indicator stay visible for the clip's duration.
+export function silentWav(seconds = 3) {
+	const sampleRate = 8000;
+	const numSamples = sampleRate * seconds;
+	const dataSize = numSamples * 2;
+	const buf = Buffer.alloc(44 + dataSize);
+	buf.write('RIFF', 0);
+	buf.writeUInt32LE(36 + dataSize, 4);
+	buf.write('WAVE', 8);
+	buf.write('fmt ', 12);
+	buf.writeUInt32LE(16, 16);
+	buf.writeUInt16LE(1, 20); // PCM
+	buf.writeUInt16LE(1, 22); // mono
+	buf.writeUInt32LE(sampleRate, 24);
+	buf.writeUInt32LE(sampleRate * 2, 28); // byte rate
+	buf.writeUInt16LE(2, 32); // block align
+	buf.writeUInt16LE(16, 34); // bits per sample
+	buf.write('data', 36);
+	buf.writeUInt32LE(dataSize, 40);
+	return buf; // samples default to zero (silence)
+}
 
 // Factory: a line with the server's field shape.
 export function line(mode, text, { id, script = null } = {}) {
@@ -63,7 +90,12 @@ const jsonBody = (data) => ({
 // - store.projects is the mutable backend state (tests can read it back).
 // - requests is an ordered log of every intercepted call: { method, path, json, text }.
 // `analyzeResult` is the fixed script array returned by /analyze.
-export async function installApi(page, { projects = [], analyzeResult = [{ happy: 0 }] } = {}) {
+// `sayAudio` (optional Buffer): when set, /say returns it as audio/wav instead of
+// the default empty audio/mpeg body — needed by the play/stop test (see silentWav).
+export async function installApi(
+	page,
+	{ projects = [], analyzeResult = [{ happy: 0 }], sayAudio = null } = {}
+) {
 	const store = { projects };
 	const requests = [];
 	const find = (id) => store.projects.find((p) => p.id === id);
@@ -99,6 +131,8 @@ export async function installApi(page, { projects = [], analyzeResult = [{ happy
 
 		// --- /say: any 200 with a dummy audio blob (playback is out of scope). ---
 		if (path.startsWith('/say')) {
+			if (sayAudio)
+				return route.fulfill({ status: 200, contentType: 'audio/wav', body: sayAudio });
 			return route.fulfill({ status: 200, contentType: 'audio/mpeg', body: '' });
 		}
 

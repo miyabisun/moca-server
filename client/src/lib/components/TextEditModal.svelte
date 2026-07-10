@@ -5,7 +5,17 @@
 	// is the ONLY way to change a line's text. Enter / primary commits, Esc cancels.
 	// `caret`: 'end' → caret at input end (vim a), 'start' → at start (vim i),
 	// undefined → select-all (menu default). `acting` shows the re-analyze notice.
-	let { text = '', caret = undefined, acting = false, onclose, oncommit } = $props();
+	// `title` / `label` default to the line-text wording; the project-title edit
+	// reuses this shell with its own copy and acting=false.
+	let {
+		text = '',
+		caret = undefined,
+		acting = false,
+		title = 'テキスト編集',
+		label = '行テキスト',
+		onclose,
+		oncommit
+	} = $props();
 
 	// Seeded once from the prop: the modal remounts per edit, so the initial
 	// capture is exactly the prefill we want.
@@ -35,14 +45,14 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<Modal title="テキスト編集" onclose={onclose} maxWidth="30rem">
+<Modal {title} onclose={onclose} maxWidth="30rem">
 	<form
 		onsubmit={(e) => {
 			e.preventDefault();
 			commit();
 		}}
 	>
-		<input type="text" bind:value={draft} use:focusInput aria-label="行テキスト" />
+		<input type="text" bind:value={draft} use:focusInput aria-label={label} />
 		{#if acting}
 			<p class="notice">保存すると感情分析をやり直します（〜10秒・現在の演技指定は破棄）。</p>
 		{/if}

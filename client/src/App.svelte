@@ -6,6 +6,7 @@
 	import LineContextMenu from '$lib/components/LineContextMenu.svelte';
 	import TextEditModal from '$lib/components/TextEditModal.svelte';
 	import NewLineModal from '$lib/components/NewLineModal.svelte';
+	import HelpModal from '$lib/components/HelpModal.svelte';
 	import DictionaryView from '$lib/components/DictionaryView.svelte';
 	import NotifySubscribe from '$lib/components/NotifySubscribe.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -30,6 +31,12 @@
 	let textEditCaret = $state(undefined);
 	// NewLineModal state for the o / O shortcuts: { pos: 'below' | 'above' } | null.
 	let newLine = $state(null);
+	// Project-title edit (プロジェクト列 a/i): { id, name, caret } | null. Distinct
+	// from the workspace inline rename — this edits the *focused* project, which may
+	// not be the one that is open.
+	let projectEdit = $state(null);
+	// Shortcut cheat-sheet modal (? key / footer button).
+	let helpOpen = $state(false);
 	// Per-line editor revision. Bumped ONLY when a mode toggle re-seeds a script so
 	// the inline editor remounts from the fresh server script; autosave reloads
 	// must not bump it, or an open editor would reset mid-edit.
@@ -83,6 +90,27 @@
 		try {
 			await api.renameProject(selectedId, name);
 			await Promise.all([loadProjects(), loadSelected()]);
+		} catch (e) {
+			addToast(`改名に失敗しました: ${e.message}`, 'danger');
+		}
+	}
+
+	// Open the project-title editor for the focused project (a = caret end, i = start).
+	// Works even when the project is not open (unlike the workspace inline rename).
+	function openProjectEdit(caret) {
+		const p = (projects ?? []).find((x) => x.id === projectCursor);
+		if (!p) return;
+		projectEdit = { id: p.id, name: p.name, caret };
+	}
+
+	async function commitProjectEdit(name) {
+		const target = projectEdit;
+		if (!target) return;
+		try {
+			await api.renameProject(target.id, name);
+			await loadProjects();
+			// Refresh the open workspace only if the edited project is the open one.
+			if (selectedId === target.id) await loadSelected();
 		} catch (e) {
 			addToast(`改名に失敗しました: ${e.message}`, 'danger');
 		}
@@ -408,7 +436,7 @@
 	}
 
 	function anyModalOpen() {
-		return !!(pourIn || confirm || menuLine || textEditLine || newLine);
+		return !!(pourIn || confirm || menuLine || textEditLine || newLine || projectEdit || helpOpen);
 	}
 
 	function onWindowKeydown(e) {
@@ -463,9 +491,29 @@
 				moveCursor(-1);
 				return;
 			case 'Enter':
-			case ' ':
+				// Enter is accordion/open only. プロジェクト列 = open (selectProject),
+				// 台本列 = toggle the accordion.
 				e.preventDefault();
 				activateCursor();
+				return;
+			case ' ': {
+				// Space plays/stops the focused target via the exact same functions the
+				// buttons call — so it shares their visual state and toggle logic.
+				// preventDefault keeps the page from scrolling.
+				e.preventDefault();
+				if (focusCol === 'project') {
+					if (projectCursor != null) onPlayAll(projectCursor);
+				} else {
+					const line = focusedLine();
+					if (line) onplay(line);
+				}
+				return;
+			}
+			case '?':
+				// Shortcut cheat-sheet. Works in either column (like n). The modal guard
+				// makes a re-press a no-op; Esc / the × closes it.
+				e.preventDefault();
+				helpOpen = true;
 				return;
 			case 'n':
 				// Toggle the header notify megaphone from either column. Synchronous
@@ -473,6 +521,14 @@
 				e.preventDefault();
 				notify?.toggle();
 				return;
+		}
+
+		// プロジェクト列での a / i: フォーカス中プロジェクトのタイトル編集
+		// (末尾 / 先頭キャレット)。開いていないプロジェクトも対象にできる。
+		if (focusCol === 'project' && (k === 'a' || k === 'i')) {
+			e.preventDefault();
+			openProjectEdit(k === 'a' ? 'end' : 'start');
+			return;
 		}
 
 		// 台本-column-only keys.
@@ -569,6 +625,7 @@
 						onmenu={openLineMenu}
 						onToggleExpand={toggleExpandLine}
 						onpourin={openPourIn}
+						onhelp={() => (helpOpen = true)}
 					/>
 				{:else}
 					<div class="placeholder">プロジェクトを選択してください。</div>
@@ -619,6 +676,21 @@
 
 {#if newLine}
 	<NewLineModal onclose={() => (newLine = null)} oncommit={commitNewLine} />
+{/if}
+
+{#if projectEdit}
+	<TextEditModal
+		text={projectEdit.name}
+		caret={projectEdit.caret}
+		title="プロジェクト名を編集"
+		label="プロジェクト名"
+		onclose={() => (projectEdit = null)}
+		oncommit={commitProjectEdit}
+	/>
+{/if}
+
+{#if helpOpen}
+	<HelpModal onclose={() => (helpOpen = false)} />
 {/if}
 
 {#if confirm}
