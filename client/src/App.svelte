@@ -5,6 +5,7 @@
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import LineContextMenu from '$lib/components/LineContextMenu.svelte';
 	import TextEditModal from '$lib/components/TextEditModal.svelte';
+	import NewLineModal from '$lib/components/NewLineModal.svelte';
 	import DictionaryView from '$lib/components/DictionaryView.svelte';
 	import NotifySubscribe from '$lib/components/NotifySubscribe.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -24,12 +25,30 @@
 	// Line context menu / text edit targets (null = closed).
 	let menuLine = $state(null);
 	let textEditLine = $state(null);
+	// Caret placement for TextEditModal: 'end' (vim a) / 'start' (vim i) /
+	// undefined (menu default = select-all).
+	let textEditCaret = $state(undefined);
+	// NewLineModal state for the o / O shortcuts: { pos: 'below' | 'above' } | null.
+	let newLine = $state(null);
 	// Per-line editor revision. Bumped ONLY when a mode toggle re-seeds a script so
 	// the inline editor remounts from the fresh server script; autosave reloads
 	// must not bump it, or an open editor would reset mid-edit.
 	let editorRev = $state({});
 	// Per-line busy flag for the アナ→演技 toggle (analysis is ~10s; blocks re-taps).
 	let toggleBusy = $state({});
+
+	// --- Vim-style keyboard cursor ---
+	// The focused column and the per-column cursor. Distinct from selectedId
+	// (which project is open): moving projectCursor does NOT change selection until
+	// Enter, per vim. Cursors are tracked by id so they follow across reloads.
+	let focusCol = $state('project'); // 'project' | 'line'
+	let projectCursor = $state(null); // project id
+	let lineCursor = $state(null); // line id
+	// Accordion open state, lifted from LineRow so click and keyboard share one
+	// source of truth. Keyed by line id (spread-to-update, like editorRev).
+	let expandedIds = $state({});
+	// Yank register: a single memory slot, cross-project, never consumed by paste.
+	let yankRegister = $state(null); // { text, mode, script } | null
 
 	async function loadProjects() {
 		projects = await api.listProjects();
@@ -106,18 +125,15 @@
 		}
 	}
 
-	// Mode toggle (the badge). アナ→演技 runs /analyze inline; 演技→アナ is
-	// destructive (discards hand-tuned JSON) and routes through ConfirmModal.
-	async function toggleMode(line) {
-		if (line.mode === 'acting') {
-			confirm = { kind: 'to-announcer', target: line, busy: false };
-			return;
-		}
+	// Re-run /analyze for `text` and persist the fresh script alongside `patch`.
+	// Guards against concurrent taps (toggleBusy) and remounts the inline editor
+	// from the new script (editorRev). Shared by the mode toggle and text edits.
+	async function analyzeAndSave(line, text, patch) {
 		if (toggleBusy[line.id]) return; // analysis already running
 		toggleBusy = { ...toggleBusy, [line.id]: true };
 		try {
-			const script = await api.analyzeLine(line.text);
-			await api.updateLine(line.id, { mode: 'acting', script });
+			const script = await api.analyzeLine(text);
+			await api.updateLine(line.id, { ...patch, script });
 			await loadSelected();
 			editorRev = { ...editorRev, [line.id]: (editorRev[line.id] ?? 0) + 1 };
 		} catch (e) {
@@ -125,6 +141,16 @@
 		} finally {
 			toggleBusy = { ...toggleBusy, [line.id]: false };
 		}
+	}
+
+	// Mode toggle (the badge). アナ→演技 runs /analyze inline; 演技→アナ is
+	// destructive (discards hand-tuned JSON) and routes through ConfirmModal.
+	async function toggleMode(line) {
+		if (line.mode === 'acting') {
+			confirm = { kind: 'to-announcer', target: line, busy: false };
+			return;
+		}
+		await analyzeAndSave(line, line.text, { mode: 'acting' });
 	}
 
 	// --- Confirm-guarded actions ---
@@ -204,8 +230,14 @@
 	}
 
 	async function commitTextEdit(text) {
-		if (!textEditLine) return;
-		await saveLine(textEditLine, { text });
+		const line = textEditLine;
+		if (!line) return;
+		// Editing an acting line's text invalidates its analysis: re-run /analyze so
+		// text and script never drift. Applies to every text-edit path (menu + a/i),
+		// not just the shortcuts.
+		// TODO(docs/DESIGN.md, unfreeze): document this keyboard/edit re-analyze.
+		if (line.mode === 'acting') await analyzeAndSave(line, text, { text });
+		else await saveLine(line, { text });
 	}
 
 	async function duplicateLine(line) {
@@ -217,10 +249,268 @@
 		}
 	}
 
+	// --- Keyboard cursor: helpers and actions ---
+
+	// Keep cursors valid as the underlying lists change (reload / delete / paste):
+	// stay on the same id if it survives, otherwise snap to the first item.
+	$effect(() => {
+		const list = projects ?? [];
+		if (list.length === 0) projectCursor = null;
+		else if (!list.some((p) => p.id === projectCursor)) projectCursor = list[0].id;
+	});
+	$effect(() => {
+		const list = selected?.lines ?? [];
+		if (list.length === 0) lineCursor = null;
+		else if (!list.some((l) => l.id === lineCursor)) lineCursor = list[0].id;
+	});
+
+	function focusedLine() {
+		return (selected?.lines ?? []).find((l) => l.id === lineCursor) ?? null;
+	}
+
+	// Bring the active column's cursor into view. block:'nearest', no smooth
+	// scroll (Washi is animation-free); the idle column's cursor is not scrolled.
+	function scrollCursorIntoView() {
+		requestAnimationFrame(() => {
+			const sel =
+				focusCol === 'project' ? '.list-pane .card.focused' : '.detail-pane .row.focused';
+			document.querySelector(sel)?.scrollIntoView({ block: 'nearest' });
+		});
+	}
+
+	// Single source of truth for accordion expand (click + Enter/Space share it).
+	// Announcer rows never expand.
+	function toggleExpandLine(line) {
+		if (line.mode !== 'acting') return;
+		expandedIds = { ...expandedIds, [line.id]: !expandedIds[line.id] };
+	}
+
+	function moveCursor(dir) {
+		const inProject = focusCol === 'project';
+		const list = (inProject ? projects : selected?.lines) ?? [];
+		const idx = list.findIndex((x) => x.id === (inProject ? projectCursor : lineCursor));
+		const next = idx + dir;
+		if (idx === -1 || next < 0 || next >= list.length) return;
+		if (inProject) projectCursor = list[next].id;
+		else lineCursor = list[next].id;
+		scrollCursorIntoView();
+	}
+
+	function activateCursor() {
+		if (focusCol === 'project') {
+			if (projectCursor != null) selectProject(projectCursor);
+		} else {
+			const line = focusedLine();
+			if (line) toggleExpandLine(line);
+		}
+	}
+
+	// J / K: swap the focused line with its neighbor via the existing reorder PUT.
+	// The cursor follows because it is tracked by id (unchanged across the reload).
+	async function moveFocusedLine(dir) {
+		const list = selected?.lines ?? [];
+		const idx = list.findIndex((l) => l.id === lineCursor);
+		const swap = idx + dir;
+		if (idx === -1 || swap < 0 || swap >= list.length) return;
+		const ids = list.map((l) => l.id);
+		[ids[idx], ids[swap]] = [ids[swap], ids[idx]];
+		await reorderLines(ids);
+		scrollCursorIntoView();
+	}
+
+	function yank(line) {
+		yankRegister = { text: line.text, mode: line.mode, script: line.script ?? null };
+	}
+
+	function yankFocusedLine() {
+		const line = focusedLine();
+		if (line) yank(line);
+	}
+
+	// dd: delete without a ConfirmModal (keyboard modality only — the yank register
+	// is the undo). Menu/button delete keeps its confirmation. Cursor follows to the
+	// next line (or previous if last).
+	async function deleteFocusedLine() {
+		const list = selected?.lines ?? [];
+		const idx = list.findIndex((l) => l.id === lineCursor);
+		if (idx === -1) return;
+		const line = list[idx];
+		yank(line);
+		const nextId = list[idx + 1]?.id ?? list[idx - 1]?.id ?? null;
+		try {
+			await api.deleteLine(line.id);
+			lineCursor = nextId;
+			await loadSelected();
+			scrollCursorIntoView();
+		} catch (e) {
+			addToast(`削除に失敗しました: ${e.message}`, 'danger');
+		}
+	}
+
+	// Insert a new line (addLine appends, then reorder to the target slot) relative
+	// to the cursor. Shared by p/P (paste) and o/O (new). Cursor follows the new line.
+	async function insertLineAt(payload, pos) {
+		try {
+			const created = await api.addLine(selectedId, payload);
+			const ids = (selected?.lines ?? []).map((l) => l.id).filter((id) => id !== created.id);
+			const anchor = ids.indexOf(lineCursor);
+			const at = anchor === -1 ? ids.length : pos === 'above' ? anchor : anchor + 1;
+			ids.splice(at, 0, created.id);
+			await api.reorderLines(selectedId, ids);
+			await loadSelected();
+			lineCursor = created.id;
+			scrollCursorIntoView();
+		} catch (e) {
+			addToast(`追加に失敗しました: ${e.message}`, 'danger');
+		}
+	}
+
+	async function pasteYank(pos) {
+		if (!yankRegister) return; // register empty: no-op
+		const payload = { mode: yankRegister.mode, text: yankRegister.text };
+		if (yankRegister.mode === 'acting' && yankRegister.script) payload.script = yankRegister.script;
+		await insertLineAt(payload, pos);
+	}
+
+	function openNewLine(pos) {
+		newLine = { pos };
+	}
+
+	async function commitNewLine(text) {
+		const pos = newLine?.pos ?? 'below';
+		await insertLineAt({ mode: 'announcer', text }, pos);
+	}
+
+	function openTextEdit(caret) {
+		const line = focusedLine();
+		if (!line) return;
+		textEditCaret = caret;
+		textEditLine = line;
+	}
+
+	function toggleFocusedMode() {
+		const line = focusedLine();
+		if (line) toggleMode(line);
+	}
+
+	// Two-key sequences (yy / dd): remember the last key + timestamp; a matching
+	// second key within 500ms fires. A single y / d does nothing.
+	let lastKey = null;
+	let lastKeyAt = 0;
+
+	function editableFocused() {
+		const el = document.activeElement;
+		if (!el) return false;
+		const tag = el.tagName;
+		return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+	}
+
+	function anyModalOpen() {
+		return !!(pourIn || confirm || menuLine || textEditLine || newLine);
+	}
+
+	function onWindowKeydown(e) {
+		// Global shortcuts only on the 台本 tab, never while typing, inside a modal,
+		// mid-IME-composition, or with a modifier held (leave those to the browser).
+		if (activeTab !== 'script') return;
+		if (e.isComposing) return;
+		if (editableFocused()) return;
+		if (anyModalOpen()) return;
+		if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+		const k = e.key;
+		const now = Date.now();
+		const prev = lastKey && now - lastKeyAt < 500 ? lastKey : null;
+		lastKey = null; // consumed unless we set a pending first key below
+
+		// yy / dd (台本 column only).
+		if (focusCol === 'line' && (k === 'y' || k === 'd')) {
+			e.preventDefault();
+			if (prev === k) {
+				if (k === 'y') yankFocusedLine();
+				else deleteFocusedLine();
+			} else {
+				lastKey = k;
+				lastKeyAt = now;
+			}
+			return;
+		}
+
+		// Cross-column keys.
+		switch (k) {
+			case 'h':
+				e.preventDefault();
+				focusCol = 'project';
+				scrollCursorIntoView();
+				return;
+			case 'l':
+				e.preventDefault();
+				focusCol = 'line';
+				scrollCursorIntoView();
+				return;
+			case 'j':
+				e.preventDefault();
+				moveCursor(1);
+				return;
+			case 'k':
+				e.preventDefault();
+				moveCursor(-1);
+				return;
+			case 'Enter':
+			case ' ':
+				e.preventDefault();
+				activateCursor();
+				return;
+		}
+
+		// 台本-column-only keys.
+		if (focusCol !== 'line') return;
+		switch (k) {
+			case 'J':
+				e.preventDefault();
+				moveFocusedLine(1);
+				break;
+			case 'K':
+				e.preventDefault();
+				moveFocusedLine(-1);
+				break;
+			case 'p':
+				e.preventDefault();
+				pasteYank('below');
+				break;
+			case 'P':
+				e.preventDefault();
+				pasteYank('above');
+				break;
+			case 'o':
+				e.preventDefault();
+				openNewLine('below');
+				break;
+			case 'O':
+				e.preventDefault();
+				openNewLine('above');
+				break;
+			case 'a':
+				e.preventDefault();
+				openTextEdit('end');
+				break;
+			case 'i':
+				e.preventDefault();
+				openTextEdit('start');
+				break;
+			case 'm':
+				e.preventDefault();
+				toggleFocusedMode();
+				break;
+		}
+	}
+
 	$effect(() => {
 		loadProjects();
 	});
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <div class="app">
 	<header class="app-header">
@@ -237,11 +527,12 @@
 	</header>
 
 	{#if activeTab === 'script'}
-		<div class="layout">
+		<div class="layout" data-active-col={focusCol}>
 			<aside class="list-pane">
 				<ProjectList
 					{projects}
 					{selectedId}
+					focusedId={focusCol === 'project' ? projectCursor : null}
 					radioProjectId={player.radioProjectId}
 					onselect={selectProject}
 					oncreate={createProject}
@@ -255,6 +546,8 @@
 						project={selected}
 						{editorRev}
 						{toggleBusy}
+						{expandedIds}
+						lineCursor={focusCol === 'line' ? lineCursor : null}
 						onrename={renameProject}
 						{onplay}
 						onsave={saveLine}
@@ -262,6 +555,7 @@
 						ontoggle={toggleMode}
 						onrequestDelete={requestDeleteLine}
 						onmenu={openLineMenu}
+						onToggleExpand={toggleExpandLine}
 						onpourin={openPourIn}
 					/>
 				{:else}
@@ -293,7 +587,10 @@
 	<LineContextMenu
 		onclose={() => (menuLine = null)}
 		onadd={() => menuAddAfter(line)}
-		onedit={() => (textEditLine = line)}
+		onedit={() => {
+			textEditCaret = undefined;
+			textEditLine = line;
+		}}
 		onduplicate={() => duplicateLine(line)}
 	/>
 {/if}
@@ -301,9 +598,15 @@
 {#if textEditLine}
 	<TextEditModal
 		text={textEditLine.text}
+		caret={textEditCaret}
+		acting={textEditLine.mode === 'acting'}
 		onclose={() => (textEditLine = null)}
 		oncommit={commitTextEdit}
 	/>
+{/if}
+
+{#if newLine}
+	<NewLineModal onclose={() => (newLine = null)} oncommit={commitNewLine} />
 {/if}
 
 {#if confirm}

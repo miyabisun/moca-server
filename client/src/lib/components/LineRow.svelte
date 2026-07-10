@@ -20,18 +20,22 @@
 		dragging = false,
 		dropBefore = false,
 		dropAfter = false,
+		// Controlled by the App (single source of truth) so keyboard (Enter/Space)
+		// and click drive the same expand state; `focused` = the vim cursor.
+		expanded = false,
+		focused = false,
 		onplay,
 		onsave,
 		ontoggle,
 		onrequestDelete,
 		onmenu,
+		onToggleExpand,
 		ondragstart,
 		ondragover,
 		ondrop,
 		ondragend
 	} = $props();
 
-	let expanded = $state(false);
 	let rowDraggable = $state(false);
 
 	function saveScript(script) {
@@ -40,7 +44,7 @@
 
 	// Card click toggles the emotion editor on 演技 lines only; アナウンサー = no-op.
 	function toggleExpand() {
-		if (line.mode === 'acting') expanded = !expanded;
+		if (line.mode === 'acting') onToggleExpand?.(line);
 	}
 
 	// --- Context menu: right-click and long-press both open the line menu. The
@@ -115,6 +119,7 @@
 <div
 	class="row"
 	class:playing
+	class:focused
 	class:dragging
 	class:drop-before={dropBefore}
 	class:drop-after={dropAfter}
@@ -232,6 +237,12 @@
 
 	&.drop-after::after
 		bottom: -5px
+
+// Vim cursor: the shared focus-ring recipe. Drawn only when the 台本 column is
+// the active pane (the cursor is remembered but not painted on the idle column).
+:global([data-active-col='line']) .row.focused
+	outline: 2px solid var(--c-accent-active)
+	outline-offset: 2px
 
 .header
 	display: flex

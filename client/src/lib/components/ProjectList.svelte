@@ -3,8 +3,16 @@
 
 	// List pane: project cards (play-all + name + line count + updated-at) and the
 	// one primary button, 新規プロジェクト.
-	let { projects, selectedId, radioProjectId, onselect, oncreate, onplayall, onrequestDelete } =
-		$props();
+	let {
+		projects,
+		selectedId,
+		focusedId = null,
+		radioProjectId,
+		onselect,
+		oncreate,
+		onplayall,
+		onrequestDelete
+	} = $props();
 
 	let creating = $state(false);
 	let draftName = $state('');
@@ -64,7 +72,7 @@
 		{:else}
 			<ul class="list">
 				{#each projects as p (p.id)}
-					<li class="card" class:selected={p.id === selectedId}>
+					<li class="card" class:selected={p.id === selectedId} class:focused={p.id === focusedId}>
 						<button
 							type="button"
 							class="play-all"
@@ -185,6 +193,12 @@
 
 	&.selected
 		border-color: var(--c-accent-border)
+
+// Vim cursor: shared focus-ring recipe. Coexists with .selected (1px border) and
+// is painted only while the プロジェクト column is the active pane.
+:global([data-active-col='project']) .card.focused
+	outline: 2px solid var(--c-accent-active)
+	outline-offset: 2px
 
 // Whole-project radio play/stop. Quiet by default; accent-colored while this
 // project is the active radio (accent-text usage, like LineRow .play.active).

@@ -1,27 +1,20 @@
 <script>
 	import Modal from '$lib/components/Modal.svelte';
 
-	// Single-line text editor for a line, pre-filled with the current text. This
-	// is the ONLY way to change a line's text. Enter / primary commits, Esc cancels.
-	// `caret`: 'end' → caret at input end (vim a), 'start' → at start (vim i),
-	// undefined → select-all (menu default). `acting` shows the re-analyze notice.
-	let { text = '', caret = undefined, acting = false, onclose, oncommit } = $props();
+	// Single-line "add a line" modal for the o / O shortcuts. Unlike PourInModal it
+	// has no mode control: new lines are always アナウンサー. Enter / primary commits.
+	let { onclose, oncommit } = $props();
 
-	// Seeded once from the prop: the modal remounts per edit, so the initial
-	// capture is exactly the prefill we want.
-	// svelte-ignore state_referenced_locally
-	let draft = $state(text);
+	let draft = $state('');
 
 	function focusInput(node) {
 		node.focus();
-		if (caret === 'end') node.setSelectionRange(node.value.length, node.value.length);
-		else if (caret === 'start') node.setSelectionRange(0, 0);
-		else node.select?.();
 	}
 
 	function commit() {
 		const t = draft.trim();
-		if (t && t !== text) oncommit?.(t);
+		if (!t) return;
+		oncommit?.(t);
 		onclose?.();
 	}
 
@@ -35,7 +28,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<Modal title="テキスト編集" onclose={onclose} maxWidth="30rem">
+<Modal title="行を追加" onclose={onclose} maxWidth="30rem">
 	<form
 		onsubmit={(e) => {
 			e.preventDefault();
@@ -43,12 +36,9 @@
 		}}
 	>
 		<input type="text" bind:value={draft} use:focusInput aria-label="行テキスト" />
-		{#if acting}
-			<p class="notice">保存すると感情分析をやり直します（〜10秒・現在の演技指定は破棄）。</p>
-		{/if}
 		<div class="actions">
 			<button type="button" class="quiet" onclick={() => onclose?.()}>キャンセル</button>
-			<button type="submit" class="primary" disabled={!draft.trim()}>保存</button>
+			<button type="submit" class="primary" disabled={!draft.trim()}>追加</button>
 		</div>
 	</form>
 </Modal>
@@ -66,12 +56,6 @@ input
 
 	&:focus
 		border-color: var(--c-accent)
-
-// Re-analyze warning for acting lines: state the real ~10s latency and script loss.
-.notice
-	margin: var(--sp-2) 0 0
-	font-size: var(--fs-xs)
-	color: var(--c-text-sub)
 
 .actions
 	display: flex

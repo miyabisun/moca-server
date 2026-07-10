@@ -9,6 +9,8 @@
 		project,
 		editorRev = {},
 		toggleBusy = {},
+		expandedIds = {},
+		lineCursor = null,
 		onrename,
 		onplay,
 		onsave,
@@ -16,6 +18,7 @@
 		ontoggle,
 		onrequestDelete,
 		onmenu,
+		onToggleExpand,
 		onpourin
 	} = $props();
 
@@ -102,6 +105,8 @@
 					playing={player.playingId === line.id}
 					spinner={player.spinnerId === line.id}
 					toggling={toggleBusy[line.id] ?? false}
+					expanded={expandedIds[line.id] ?? false}
+					focused={line.id === lineCursor}
 					draggable={project.lines.length > 1}
 					dragging={dragId === line.id}
 					dropBefore={overId === line.id && overPos === 'before'}
@@ -111,6 +116,7 @@
 					{ontoggle}
 					{onrequestDelete}
 					{onmenu}
+					{onToggleExpand}
 					ondragstart={onDragStart}
 					ondragover={onDragOver}
 					ondrop={onDrop}
