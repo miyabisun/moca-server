@@ -4,6 +4,8 @@ target/
 *.db-wal
 *.db-shm
 client/build/
+client/test-results/
+client/playwright-report/
 .env
 .env.local
 

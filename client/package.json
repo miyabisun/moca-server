@@ -5,12 +5,14 @@
   "scripts": {
     "dev": "vite --port 5174 --host",
     "build": "vite build",
-    "preview": "vite preview --port 5174 --host"
+    "preview": "vite preview --port 5174 --host",
+    "test": "playwright test"
   },
   "dependencies": {
     "normalize.css": "^8.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "sass": "^1.60.0",
     "svelte": "^5.0.0",
