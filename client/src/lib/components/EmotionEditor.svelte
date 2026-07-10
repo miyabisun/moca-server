@@ -171,7 +171,7 @@
 		line-height: 1
 
 		&:hover
-			background: var(--c-overlay-2)
+			background: var(--c-hover-2)
 
 	.num
 		min-width: 3rem

@@ -298,8 +298,8 @@
 		return (selected?.lines ?? []).find((l) => l.id === lineCursor) ?? null;
 	}
 
-	// Bring the active column's cursor into view. block:'nearest', no smooth
-	// scroll (Washi is animation-free); the idle column's cursor is not scrolled.
+	// Bring the active column's cursor into view. block:'nearest', immediate (no
+	// smooth scroll) per Sumi's motion discipline; the idle column is not scrolled.
 	function scrollCursorIntoView() {
 		requestAnimationFrame(() => {
 			const sel =
@@ -714,14 +714,15 @@
 	grid-template-rows: auto 1fr
 	height: 100dvh
 
-// A thin surface-raised band with the site title and the app's only navigation:
-// the 台本 / 辞書 tabs. No actions, no shadow.
+// A thin band with the site title and the app's only navigation: the 台本 / 辞書
+// tabs. No actions, no shadow. Sumi = surface-raised; Kinari overrides the wash
+// token to a faint mocha so the workspace opens on warmth (see docs/DESIGN.md).
 .app-header
 	display: flex
 	align-items: center
 	gap: var(--sp-5)
 	padding: var(--sp-2) var(--sp-4)
-	background: var(--c-surface)
+	background: var(--c-wash-raised)
 	border-bottom: 1px solid var(--c-border)
 
 .site-title

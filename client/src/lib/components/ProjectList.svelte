@@ -117,6 +117,7 @@
 	gap: var(--sp-3)
 	min-height: var(--pane-head-h)
 	padding: var(--sp-3)
+	background: var(--c-wash-base)
 	border-bottom: 1px solid var(--c-border)
 
 	h1
@@ -189,7 +190,7 @@
 	border: 1px solid var(--c-border)
 
 	&:hover
-		background: var(--c-overlay-1)
+		background: var(--c-hover-1)
 
 	&.selected
 		border-color: var(--c-accent-border)

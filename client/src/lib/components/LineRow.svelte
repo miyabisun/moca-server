@@ -283,7 +283,7 @@
 	cursor: pointer
 
 	&:hover
-		background: var(--c-overlay-2)
+		background: var(--c-hover-2)
 
 	&.active
 		color: var(--c-accent)
@@ -329,7 +329,7 @@
 		color: var(--c-text-sub)
 
 	&:hover
-		background: var(--c-overlay-2)
+		background: var(--c-hover-2)
 
 	&:disabled
 		cursor: wait

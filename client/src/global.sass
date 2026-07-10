@@ -1,7 +1,7 @@
 // Sumi design system tokens, moca-server override (see docs/DESIGN.md).
-// :root IS the Sumi (dark) theme — the default. Washi (light, e-paper) is
-// applied via @media (prefers-color-scheme: light) at the bottom. The OS
-// decides; there is no in-app toggle and no data-theme attribute.
+// :root IS the Sumi (dark) theme — the default. Kinari (light, warm,
+// screen-first) is applied via @media (prefers-color-scheme: light) at the
+// bottom. The OS decides; there is no in-app toggle and no data-theme attribute.
 \:root
 	// Spacing (4px base scale: 4 / 8 / 12 / 16 / 24)
 	--sp-1: 4px
@@ -72,6 +72,20 @@
 	--emo-angry: rgba(235, 120, 110, 0.85)
 	--emo-teary: rgba(120, 170, 235, 0.85)
 
+	// --- Kinari sprinkle indirection (see docs/DESIGN.md "Kinari sprinkles") ---
+	// Semantic hooks so the light theme can add its warm accent wash without any
+	// hardcoded hex in components. In Sumi (:root) they resolve to the current
+	// neutral values, so the dark rendering is byte-equivalent; the light @media
+	// block below overrides them with the accent/secondary washes.
+	// Desk washes: the two pane-header bands + sticky footer + app-header band.
+	--c-wash-raised: var(--c-surface)
+	--c-wash-base: var(--c-bg)
+	// Hover washes: -1 for surface-raised cards, -2 for on-raised controls,
+	// -secondary for the megaphone (emerald "alive" family).
+	--c-hover-1: var(--c-overlay-1)
+	--c-hover-2: var(--c-overlay-2)
+	--c-hover-secondary: var(--c-overlay-2)
+
 *,
 *::before,
 *::after
@@ -108,27 +122,32 @@ button
 :focus:not(:focus-visible)
 	outline: none
 
-// Washi (light, e-paper) — OS-driven override of the Sumi defaults above.
+// Kinari (light, warm, screen-first) — OS-driven override of the Sumi defaults.
 @media (prefers-color-scheme: light)
 	\:root
-		--c-bg: #fafafa
-		--c-surface: #ffffff
-		--c-border: #c9c9c4
+		--c-bg: #faf6ef
+		--c-surface: #fffdf8
+		--c-border: #e3d9c9
 
-		--c-text: #222222
-		--c-text-sub: #4a4a4a
-		--c-text-muted: #4a4a4a
+		--c-text: #3a2f28
+		--c-text-sub: #6f6257
+		--c-text-muted: #6f6257
 
 		--c-overlay-1: rgba(0, 0, 0, 0.04)
 		--c-overlay-2: rgba(0, 0, 0, 0.06)
 
-		--c-scrim: rgba(0, 0, 0, 0.4)
+		--c-scrim: rgba(58, 47, 40, 0.4)
+		// Kinari never uses pure white; filled primary buttons put surface-raised
+		// (cream) text on the mocha accent (measured ~8:1 on #6b4632).
+		--c-on-accent: #fffdf8
 
 		--c-accent: #6b4632
 		--c-accent-bg: rgba(107, 70, 50, 0.12)
 		--c-accent-border: rgba(107, 70, 50, 0.4)
-		--c-accent-active: rgba(107, 70, 50, 0.6)
-		// Washi primary buttons are unchanged: strong == accent here.
+		// Focus ring on cream: 0.6 alpha composites to ~2.9:1 (fails 3:1); 0.7
+		// reaches ~3.6:1 (Kinari template rule — darken the ring when it fails).
+		--c-accent-active: rgba(107, 70, 50, 0.7)
+		// Kinari primary buttons are unchanged: strong == accent here.
 		--c-accent-strong: #6b4632
 
 		--c-secondary: #2a9d6e
@@ -136,20 +155,25 @@ button
 
 		--c-link: #14506e
 
-		--c-danger: #8f1d16
-		--c-danger-bg: #fdeeee
-		--c-danger-border: rgba(143, 29, 22, 0.4)
+		--c-danger: #9c2b1d
+		--c-danger-bg: #f9e9e4
+		--c-danger-border: rgba(156, 43, 29, 0.4)
 
-		// Emotion data colors (Washi): darkness-ramp inks, hue as secondary cue.
+		// Emotion data colors (Kinari): warm inks, hue as a first-class cue.
 		--emo-bosoboso: #4a5248
 		--emo-doyaru: #2a9d6e
 		--emo-honwaka: #8a5a20
 		--emo-angry: #8f2222
 		--emo-teary: #1f4e8c
 
-	// e-paper ghosting: nothing animates in Washi.
-	*,
-	*::before,
-	*::after
-		animation: none !important
-		transition: none !important
+		// --- Kinari sprinkles (light only, decorative — see docs/DESIGN.md) ---
+		// One opaque mocha wash (accent-subtle composited onto cream) framing the
+		// header band, both pane headers, and the sticky footer as one warm desk.
+		// Opaque is required: the footer is sticky and rows scroll under it, so a
+		// translucent wash would let them show through.
+		--c-wash-base: color-mix(in srgb, var(--c-accent) 12%, var(--c-bg))
+		--c-wash-raised: var(--c-wash-base)
+		// Hovers become the mocha wash; the megaphone hovers emerald (alive family).
+		--c-hover-1: var(--c-accent-bg)
+		--c-hover-2: var(--c-accent-bg)
+		--c-hover-secondary: var(--c-secondary-bg)

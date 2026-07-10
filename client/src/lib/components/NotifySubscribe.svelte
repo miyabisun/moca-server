@@ -105,13 +105,12 @@
 	cursor: pointer
 
 	&:hover
-		background: var(--c-overlay-2)
+		background: var(--c-hover-secondary)
 
 	// ON = subscribed: emerald secondary + slow opacity breathing. The breathing
 	// animation is applied to the icon (not the button itself) so the focus ring
-	// never flickers. In Washi the global animation:none rule (e-paper ghosting)
-	// stops it, so the color alone carries state there — same fallback as
-	// prefers-reduced-motion below.
+	// never flickers. It runs in both themes; only prefers-reduced-motion (below)
+	// suspends it, and the ON color alone then carries the state.
 	&.on
 		color: var(--c-secondary)
 

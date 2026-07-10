@@ -38,5 +38,5 @@
 		cursor: pointer
 
 		&:hover
-			background: var(--c-overlay-2)
+			background: var(--c-hover-2)
 </style>

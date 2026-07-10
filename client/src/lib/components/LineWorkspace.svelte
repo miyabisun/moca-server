@@ -152,6 +152,7 @@
 	gap: var(--sp-3)
 	min-height: var(--pane-head-h)
 	padding: var(--sp-3)
+	background: var(--c-wash-base)
 	border-bottom: 1px solid var(--c-border)
 
 	.title-btn
@@ -200,7 +201,7 @@
 	justify-content: space-between
 	padding: var(--sp-3)
 	border-top: 1px solid var(--c-border)
-	background: var(--c-bg)
+	background: var(--c-wash-base)
 
 // Quiet icon-button (Modal .close recipe): 36px hit area, no fill, sub text color.
 .help
