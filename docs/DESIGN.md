@@ -3,18 +3,20 @@ version: alpha
 name: Sumi / moca-server
 description: >
   moca-server project overrides for the Sumi design system. The canonical
-  template lives at ~/.claude/designs/sumi/DESIGN.md; this file records
+  templates live at ~/.claude/designs/sumi/DESIGN.md (dark = Sumi) and
+  ~/.claude/designs/kinari/DESIGN.md (light = Kinari); this file records
   ONLY what is specific to moca-server (primary + secondary accents +
   emotion data colors + domain components for the script-production
   workspace). CSS custom properties in client/src/global.sass are the
   implementation of these tokens.
 colors:
   # --- Project primary accent (mocha brown) ---
-  # Unsuffixed = Washi theme (light), -dark = Sumi theme (dark).
+  # Unsuffixed = Kinari theme (light), -dark = Sumi theme (dark).
   # Mocha: the tool is named after 宮舞モカ. Deliberately desaturated
   # coffee brown so it never reads as 5ch-viewer's vivid amber
   # (amber = 5ch-viewer, blue = novel-server, red = youtube-sub-feed,
-  # violet = comic-server). Washi value keeps white-on-accent ≥ 4.5:1.
+  # violet = comic-server). Kinari value keeps white-on-accent ≥ 4.5:1
+  # and reads warm on the cream surface.
   accent: "#6b4632"
   accent-subtle: "rgba(107, 70, 50, 0.12)"
   accent-dark: "#c9a086"
@@ -22,7 +24,7 @@ colors:
   # accent-strong-dark: the Sumi primary-button surface. The pale mocha
   # accent-dark (needed for underlines/focus on dark surfaces) fails
   # white-on-accent contrast (~2:1), so filled primary buttons in Sumi
-  # use this deepened mocha instead (white text ≥ 5.5:1). Washi primary
+  # use this deepened mocha instead (white text ≥ 5.5:1). Kinari primary
   # buttons keep using accent unchanged.
   accent-strong-dark: "#8a5a3c"
   # --- Project secondary accent (emerald green) ---
@@ -37,8 +39,9 @@ colors:
   secondary-dark: "#4dd6a1"
   secondary-subtle-dark: "rgba(77, 214, 161, 0.15)"
   # --- Functional data colors: the five emotion axes ---
-  # One hue per VOICEPEAK emotion axis. Washi values are darkness-ramp
-  # inks (read as ink first, hue second); Sumi values are muted pastels
+  # One hue per VOICEPEAK emotion axis. Kinari values are warm inks that
+  # stay AA as chip text on surface-raised while letting hue read as a
+  # first-class cue (Kinari license); Sumi values are muted pastels
   # readable on surface-raised-dark.
   emo-bosoboso: "#4a5248"
   emo-bosoboso-dark: "rgba(150, 168, 152, 0.85)"
@@ -57,12 +60,19 @@ colors:
 
 ## Overview
 
-**This project follows the Sumi design system.** The canonical template is
-`~/.claude/designs/sumi/DESIGN.md` — all shared rules (neutral chrome,
-accent rules, scales, flat elevation, iconography, component recipes)
-live there and are NOT restated here. This document records only what is
-unique to moca-server. On chrome questions the template wins; on the
-domain semantics below this file wins.
+**This project follows the Sumi design system, pairing Sumi (dark) with
+Kinari (light).** The canonical templates are
+`~/.claude/designs/sumi/DESIGN.md` (all shared rules: neutral chrome,
+accent rules, scales, flat elevation, iconography, component recipes) and
+`~/.claude/designs/kinari/DESIGN.md` (the warm screen-first light theme:
+cream surfaces, sepia ink, accent-sprinkle license). Shared rules are NOT
+restated here. This document records only what is unique to moca-server.
+On chrome questions the templates win; on the domain semantics below this
+file wins.
+
+moca-server does **not** use Washi: this is an audio tool — nobody opens
+it on an e-paper device — so its light theme optimizes for warmth and
+charm on ordinary screens, not for e-ink contrast survival.
 
 moca-server is a **script-production workspace** for the 宮舞モカ voice:
 projects hold ordered lines (台本行), each line is either plain narration
@@ -70,13 +80,13 @@ or an emotion-annotated script, and the produced artifact is the script
 JSON — not the audio. The user's loop is: pour text in → listen → nudge
 emotion → listen again. The UI must make that loop one-tap tight.
 
-Primary accent: **mocha brown** (`#6b4632` Washi / `#c9a086` Sumi). A
+Primary accent: **mocha brown** (`#6b4632` Kinari / `#c9a086` Sumi). A
 quiet, coffee-toned brown fitting the calm narration voice this tool
 exists for. It marks interactive chrome only: active tabs, the one
 primary button per screen, focused inputs, the shared focus ring, and
 the currently-playing line indicator.
 
-Secondary accent: **emerald green** (`#2a9d6e` Washi / `#4dd6a1` Sumi).
+Secondary accent: **emerald green** (`#2a9d6e` Kinari / `#4dd6a1` Sumi).
 Taken from 宮舞モカ's own hair color — her hallmark hue. Its role is
 strictly *persistent "alive" state* that runs in the background while
 the user does something else: currently, the notification-subscribe
@@ -85,9 +95,26 @@ secondary owns "this switch is still on". They must never fight for the
 same region — a screen may show both because they mean different things.
 
 Themes follow the family's Sumi-first convention: `:root` in
-`client/src/global.sass` IS the Sumi (dark) theme, and Washi (light,
-e-paper) is applied via `@media (prefers-color-scheme: light)` — the OS
+`client/src/global.sass` IS the Sumi (dark) theme, and Kinari (light,
+warm) is applied via `@media (prefers-color-scheme: light)` — the OS
 decides; there is no in-app toggle and no `data-theme` attribute.
+
+**Kinari sprinkles in this app** (where the accent-decoration license is
+spent — deliberately few, all light-theme only, none carrying meaning
+that text/shape doesn't already carry):
+
+- **App header band:** a faint mocha wash (`accent-subtle`) instead of
+  plain surface-raised, so the workspace opens on warmth instead of
+  blank paper.
+- **Hover / active-row washes:** list rows and buttons may hover with
+  `accent-subtle` (or `secondary-subtle` on the megaphone) rather than
+  the neutral border swap.
+- **Pane headers & sticky footer:** may carry the same faint wash as the
+  header band to frame the panes as one warm desk.
+- **Emotion chips:** keep their axis-tinted backgrounds — on cream these
+  tints read as the "sprinkled color" the theme wants; no change needed.
+- **Focus ring:** verify the mocha ring ≥ 3:1 on cream; darken ring
+  alpha from 60% if measurement fails (Kinari template rule).
 
 ## Domain model (declarative)
 
@@ -181,6 +208,11 @@ with white text; `accent-dark` (the pale mocha) remains the color of
 active-tab underlines, focus rings, and accent text, where it must stand
 out against dark surfaces. One accent identity, two luminances, each
 where its contrast works.
+
+**Emotion colors in Kinari** keep the same ink values as before but are
+freed from the Washi darkness-ramp rule: hue is a first-class cue on
+LCD. They must stay AA as chip text against surface-raised (`#fffdf8`);
+if the designer tunes any hue warmer, that constraint is the gate.
 
 ## Layout
 
@@ -293,7 +325,7 @@ Domain components on top of the Sumi recipes:
   template quiet icon-button toggling an app-global subscription to
   server-pushed notifications (POST /notify → SSE broadcast). OFF
   (muted): megaphone-off SVG in `muted` color. ON (subscribed):
-  megaphone SVG in `secondary` (Washi) / `secondary-dark` (Sumi) with
+  megaphone SVG in `secondary` (Kinari) / `secondary-dark` (Sumi) with
   a slow opacity breathing (~2s, 0.6→1.0→0.6; suspended when
   `prefers-reduced-motion: reduce` is set — the color-only state still
   conveys ON). Clicking OFF→ON both opens the SSE stream *and*
