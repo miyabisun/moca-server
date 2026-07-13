@@ -1,5 +1,5 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import Icon from '$lib/components/Icon.svelte';
 
 	// App-global notification subscribe toggle (header, far right). ON opens an SSE
@@ -8,11 +8,17 @@
 	// Completely independent from the line-player: notifications may sound on top
 	// of a running line or radio playback. Serial FIFO, no queue cap.
 	let subscribed = $state(false);
+	let connected = $state(false);
 
 	let es = null; // EventSource
 	let audio = null; // private HTMLAudioElement, distinct from the line-player
 	let queue = [];
 	let playing = false;
+	let lastWakeCheck = Date.now();
+	let wakeTimer = null;
+
+	const WAKE_CHECK_MS = 5_000;
+	const SLEEP_GAP_MS = 30_000;
 
 	function enqueue(text) {
 		if (!text) return;
@@ -51,17 +57,50 @@
 		}
 	}
 
+	function openStream() {
+		es?.close();
+		connected = false;
+
+		const stream = new EventSource('/notify/stream');
+		es = stream;
+		stream.onopen = () => {
+			if (es === stream) connected = true;
+		};
+		stream.onerror = () => {
+			// EventSource retries transport errors itself. Keep showing the desired
+			// subscription as pressed while making the disconnected state visible.
+			if (es === stream) connected = false;
+		};
+		stream.onmessage = (e) => enqueue(e.data);
+	}
+
+	function reconnect() {
+		if (subscribed) openStream();
+	}
+
 	function subscribe() {
 		// (a) Unlock autoplay synchronously inside the user gesture (Safari policy).
 		new Audio().play().catch(() => {});
 		// (b) Open the SSE stream.
-		es = new EventSource('/notify/stream');
-		es.onmessage = (e) => enqueue(e.data);
+		openStream();
 	}
 
 	function unsubscribe() {
 		es?.close();
 		es = null;
+		connected = false;
+	}
+
+	function onVisibilityChange() {
+		if (document.visibilityState === 'visible') reconnect();
+	}
+
+	function checkForSleep() {
+		const now = Date.now();
+		if (now - lastWakeCheck > SLEEP_GAP_MS && document.visibilityState === 'visible') {
+			reconnect();
+		}
+		lastWakeCheck = now;
 	}
 
 	// Exported so App.svelte's global `n` shortcut can drive the same toggle as the
@@ -73,15 +112,35 @@
 		else unsubscribe();
 	}
 
-	onDestroy(() => es?.close());
+	onMount(() => {
+		window.addEventListener('online', reconnect);
+		window.addEventListener('pageshow', reconnect);
+		document.addEventListener('resume', reconnect);
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		wakeTimer = window.setInterval(checkForSleep, WAKE_CHECK_MS);
+	});
+
+	onDestroy(() => {
+		es?.close();
+		window.removeEventListener('online', reconnect);
+		window.removeEventListener('pageshow', reconnect);
+		document.removeEventListener('resume', reconnect);
+		document.removeEventListener('visibilitychange', onVisibilityChange);
+		if (wakeTimer != null) window.clearInterval(wakeTimer);
+	});
 </script>
 
 <button
 	type="button"
 	class="megaphone"
-	class:on={subscribed}
+	class:on={connected}
+	class:connecting={subscribed && !connected}
 	aria-pressed={subscribed}
-	aria-label={subscribed ? '通知購読を解除' : '通知を購読'}
+	aria-label={connected
+		? '通知購読中、押すと解除'
+		: subscribed
+			? '通知に接続中、押すと解除'
+			: '通知を購読'}
 	onclick={toggle}
 >
 	<Icon name={subscribed ? 'megaphone' : 'megaphone-off'} />
@@ -116,6 +175,14 @@
 
 		:global(.icon)
 			animation: breathe 2s ease-in-out infinite alternate
+
+	// Subscription is still desired, but the SSE transport is not open yet.
+	// Keep the same semantic color family while making it visibly distinct from ON.
+	&.connecting
+		color: var(--c-secondary)
+
+		:global(.icon)
+			opacity: 0.45
 
 @keyframes breathe
 	from
