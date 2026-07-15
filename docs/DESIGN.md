@@ -348,16 +348,32 @@ Domain components on top of the Sumi recipes:
   company. It is *scenery, not workspace* — the vim shortcut system
   stays 台本-only (the global keydown guard bails on this tab) and no
   Sumi list/card recipes appear here.
-  - **Layers (back to front):** WorkScene (window scenery), WorkPortrait
-    (official standing art), timer panel on a translucent glass slot
+  - **Framing: the whole stage is モカ's laptop-webcam feed.** She sits
+    at her desk on a video call with the user (a same-age school
+    friend); the camera sees her from the chest up plus her room behind
+    her. Never show elbows-down or legs (hands are below the camera),
+    never show the bed. Thin call chrome (a 通話中 pill + vignette)
+    sells the framing without becoming UI.
+  - **Layers (back to front):** WorkScene (her room: wall, door,
+    hard-angled closet sliver on the left, a **perspective-skewed
+    window on the right wall** — rotateY so the far edge is shorter —
+    desk surface at the bottom), WorkPortrait (bust-up crop of the
+    official art), call chrome, timer panel on a translucent glass slot
     (`--c-bg` at ~72% + blur) so it stays readable over the scenery.
   - **Scenery palette is scene art, not chrome:** the sky gradients
-    (dawn 5–8 / day 8–16 / dusk 16–19 / night otherwise), window-frame
-    wood, lamp glow and drifting motes use fixed literal colors and are
-    identical in Sumi and Kinari. Sky bands cross-fade by opacity (3s);
-    town lights and the moon appear at night only. All ambient motion
-    (motes, portrait breathing, blink, lip-flap) stops under
-    `prefers-reduced-motion: reduce`.
+    (dawn 5–8 / day 8–16 / dusk 16–19 / night otherwise), wall shades,
+    window-frame wood, lamp glow and drifting motes use fixed literal
+    colors and are identical in Sumi and Kinari. Sky and wall bands
+    cross-fade by opacity (3s); town lights and the moon appear at
+    night only. All ambient motion (motes, portrait breathing, blink,
+    lip-flap) stops under `prefers-reduced-motion: reduce`.
+  - **Voice tone contract:** モカ is a 2nd-year high-schooler on a
+    habitual "mutual accountability" work call with a classmate —
+    casual タメ口, zero romantic tension. Emotion params stay subtle:
+    `honwaka` never exceeds 20 (higher reads as a put-on phone voice);
+    calm is expressed with `speed` ≈ 90, not warmth axes. Chatter is
+    overheard muttering (「ええと……」「よし、動いた!」) plus
+    deliberately trivial small talk.
   - **Timer ring** is always accent — `secondary` stays reserved for
     persistent alive states, which here is only the 声かけ ON toggle
     (same family as the notify megaphone). Phase is conveyed by the
@@ -365,7 +381,9 @@ Domain components on top of the Sumi recipes:
   - **Portrait:** the official 232-PNG diff set (18 eye-sets × 13
     mouths; two sets ship with 12, so the manifest is an explicit
     table, not arithmetic — served from `MOCA_ASSETS_DIR` via
-    `/moca-assets`, never committed). Blink = 120ms swap to the blink pair every 3–8s
+    `/moca-assets`, never committed), shown as a **bust-up webcam
+    crop** (face-to-chest region of the source art; the full standing
+    figure is never displayed). Blink = 120ms swap to the blink pair every 3–8s
     (suppressed while speaking); lip-flap = ~110ms random vowel cycling
     while the voice audio plays; expression follows the phase (work =
     normal, break = smile) and, while speaking, the line's emotion

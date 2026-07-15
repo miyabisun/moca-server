@@ -10,7 +10,7 @@
 
 const STORAGE_KEY = 'moca-work-timer';
 
-const DEFAULTS = { workMin: 25, breakMin: 5, sets: 4 };
+const DEFAULTS = { workMin: 25, breakMin: 5, sets: 1 };
 
 function loadSettings() {
 	try {

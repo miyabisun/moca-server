@@ -234,6 +234,8 @@
 		align-items: center
 		gap: var(--sp-1)
 
+	// スピナーは両エンジンとも消す。Firefox は矢印が値の右側を覆って数字が
+	// 読めなくなるため (値の増減はキーボード/直接入力で足りる)。
 	input
 		width: 3.5em
 		padding: var(--sp-1) var(--sp-2)
@@ -244,6 +246,12 @@
 		background: var(--c-bg)
 		border: 1px solid var(--c-border)
 		border-radius: var(--radius-sm)
+		appearance: textfield
+
+		&::-webkit-outer-spin-button,
+		&::-webkit-inner-spin-button
+			-webkit-appearance: none
+			margin: 0
 
 		&:focus
 			border-color: var(--c-accent)

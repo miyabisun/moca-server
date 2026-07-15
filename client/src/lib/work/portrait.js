@@ -104,15 +104,15 @@ export function imageFor(eyeKey, mouthKey = 'rest') {
 }
 
 // セリフの感情サマリ ({axis: max0-100}) から目元セットを選ぶ。しきい値未満は
-// 素の表情のまま。優先順は「強い表現ほど勝つ」: 怒り > 涙 > 照れ系 > ほんわか。
+// 素の表情のまま。セリフ側の感情は控えめ運用 (honwaka ≤ 20、独り言は素〜30) に
+// 合わせて、しきい値も低めに取る。優先順は「強い表現ほど勝つ」。
 export function eyeForEmotion(summary, fallback = 'normal') {
 	if (!summary) return fallback;
 	const v = (k) => summary[k] ?? 0;
-	if (v('angry') >= 40) return 'serious';
-	if (v('teary') >= 40) return 'teary';
-	if (v('honwaka') >= 60) return 'smile';
-	if (v('honwaka') >= 30) return 'normal';
-	if (v('bosoboso') >= 50) return 'sleepy';
-	if (v('doyaru') >= 40) return 'smile';
+	if (v('angry') >= 15) return 'serious';
+	if (v('teary') >= 15) return 'teary';
+	if (v('doyaru') >= 15) return 'smile';
+	if (v('honwaka') >= 15) return 'smile';
+	if (v('bosoboso') >= 40) return 'sleepy';
 	return fallback;
 }

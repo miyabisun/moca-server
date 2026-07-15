@@ -3,8 +3,10 @@
 	import WorkPortrait from '$lib/components/WorkPortrait.svelte';
 	import WorkTimerPanel from '$lib/components/WorkTimerPanel.svelte';
 
-	// 作業タブのルート。レイヤー合成だけを担い、ロジックは持たない:
-	// 奥から WorkScene (窓辺の演出) → WorkPortrait (立ち絵) → タイマー盤。
+	// 作業タブのルート。レイヤー合成だけを担い、ロジックは持たない。
+	// 画面全体が「モカのノート PC カメラの映像」という体なので、奥から
+	// WorkScene (部屋の中) → WorkPortrait (バストアップのモカ) →
+	// ビデオ通話らしい薄いクローム (通話中バッジ・ビネット) → タイマー盤。
 	// 立ち絵は素材未配置なら自分で消えるので、ここでは並べるだけでよい。
 </script>
 
@@ -12,6 +14,9 @@
 	<WorkScene />
 	<div class="portrait-slot">
 		<WorkPortrait />
+	</div>
+	<div class="cam-chrome">
+		<span class="live"><span class="dot"></span>通話中</span>
 	</div>
 	<div class="panel-slot">
 		<WorkTimerPanel />
@@ -25,22 +30,51 @@
 	min-height: 0
 	overflow: hidden
 
+// カメラの被写体。デスクに座るモカのバストアップを中央やや右、下端に接地
 .portrait-slot
 	position: absolute
-	right: 6%
 	bottom: 0
-	top: 6%
+	left: 55%
+	transform: translateX(-50%)
+	height: 78%
 	display: flex
 	align-items: flex-end
+	justify-content: center
 
 	@media (max-width: 767px)
-		// 狭い画面ではタイマー盤を優先し、立ち絵は右へ逃がして顔だけ覗かせる
-		right: -30%
+		left: 68%
+		height: 62%
+
+// ビデオ通話らしさの薄皮: 周辺減光と「通話中」バッジ。操作は透過する
+.cam-chrome
+	position: absolute
+	inset: 0
+	pointer-events: none
+	box-shadow: inset 0 0 110px rgba(0, 0, 0, 0.35)
+
+	.live
+		position: absolute
+		top: var(--sp-3)
+		left: var(--sp-3)
+		display: inline-flex
+		align-items: center
+		gap: var(--sp-1)
+		padding: 2px var(--sp-2)
+		border-radius: var(--radius-full)
+		background: rgba(0, 0, 0, 0.35)
+		color: rgba(255, 255, 255, 0.85)
+		font-size: var(--fs-xs)
+
+	.dot
+		width: 7px
+		height: 7px
+		border-radius: var(--radius-full)
+		background: #4dd6a1
 
 // タイマー盤は薄いガラス面に載せて、演出の上でも読めるようにする
 .panel-slot
 	position: absolute
-	left: clamp(var(--sp-4), 8%, 120px)
+	left: clamp(var(--sp-4), 6%, 96px)
 	top: 50%
 	transform: translateY(-50%)
 	background: color-mix(in srgb, var(--c-bg) 72%, transparent)
@@ -51,4 +85,5 @@
 	@media (max-width: 767px)
 		left: 50%
 		transform: translate(-50%, -50%)
+		background: color-mix(in srgb, var(--c-bg) 82%, transparent)
 </style>

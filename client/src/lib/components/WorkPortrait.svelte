@@ -107,16 +107,34 @@
 </script>
 
 {#if available}
-	<img class="portrait" {src} alt="宮舞モカ" draggable="false" onerror={() => (available = false)} />
+	<div class="bust">
+		<img
+			class="portrait"
+			{src}
+			alt="宮舞モカ"
+			draggable="false"
+			onerror={() => (available = false)}
+		/>
+	</div>
 {/if}
 
 <style lang="sass">
-// ゆっくりした呼吸ゆらぎ。画像の差し替え (表情・口) とは独立した CSS だけの動き。
-.portrait
+// ノートPCのカメラに写っている想定なので全身は見せない。元画像 (1414x2000) の
+// 顔〜胸元だけ = x 400-1020 / y 40-760 の領域を切り出すバストアップ。
+// 肘から先や足が見えるのはコンセプト違反 (手元はカメラの下)。
+.bust
+	position: relative
 	height: 100%
+	aspect-ratio: 620 / 720
+	overflow: hidden
+
+// クロップ領域の換算: 幅 = 1414/620、左 = -400/620、上 = -40/720 (コンテナ基準)。
+.portrait
+	position: absolute
+	width: 228%
+	left: -64.5%
+	top: -5.6%
 	max-width: none
-	object-fit: contain
-	object-position: bottom
 	user-select: none
 	animation: breathe-sway 6s ease-in-out infinite alternate
 
@@ -124,7 +142,7 @@
 	from
 		transform: translateY(0)
 	to
-		transform: translateY(3px)
+		transform: translateY(4px)
 
 @media (prefers-reduced-motion: reduce)
 	.portrait
