@@ -354,12 +354,16 @@ Domain components on top of the Sumi recipes:
     her. Never show elbows-down or legs (hands are below the camera),
     never show the bed. Thin call chrome (a 通話中 pill + vignette)
     sells the framing without becoming UI.
-  - **Layers (back to front):** WorkScene (her room: wall, door,
-    hard-angled closet sliver on the left, a **perspective-skewed
-    window on the right wall** — rotateY so the far edge is shorter —
-    desk surface at the bottom), WorkPortrait (bust-up crop of the
-    official art), call chrome, timer panel on a translucent glass slot
-    (`--c-bg` at ~72% + blur) so it stays readable over the scenery.
+  - **Layers (back to front):** WorkScene (her room, drawn honestly or
+    not at all: a hard-skewed **window on the left wall** whose left
+    edge runs off-frame — rotateY(60°), far edge much shorter, sill at
+    her shoulder height —, one dark vertical at the side/back wall
+    corner, and a tall door on the back wall cut off at the bottom.
+    No ceiling, no floor, no closet: flat-layer CSS cannot keep those
+    consistent, so anything that would betray the fake 3D is omitted),
+    WorkPortrait (bust-up crop of the official art), call chrome, timer
+    panel on a translucent glass slot (`--c-bg` at ~72% + blur) so it
+    stays readable over the scenery.
   - **Scenery palette is scene art, not chrome:** the sky gradients
     (dawn 5–8 / day 8–16 / dusk 16–19 / night otherwise), wall shades,
     window-frame wood, lamp glow and drifting motes use fixed literal
@@ -375,9 +379,18 @@ Domain components on top of the Sumi recipes:
     overheard muttering (「ええと……」「よし、動いた!」, base
     `bosoboso` ≈ 55) plus deliberately trivial small talk, played at
     reduced volume (~0.45 — a friend muttering, not addressing you)
-    every 1–1.5 minutes (ひかえめ: 5–10min). The idle expression drifts every 20–50s
-    (frowns, half-lidded eyes, closed eyes, the occasional slacking
-    face) so she never sits frozen in a neutral stare.
+    every 1–1.5 minutes (ひかえめ: 5–10min).
+  - **Expression contract:** the idle face never drifts on its own —
+    working = half-lidded (208), break/waiting = 001 looking at the
+    camera. Every line carries its own eye-set (`{eye, script}`);
+    addressed speech always uses 001, and she never *talks* with her
+    eyes closed. Closed-eye sets appear only as blinks and inside
+    scripted sequences: a mutter → eyes closed for ~8s → a recovery
+    line (「よし、集中!」/「しょうがない、切り替えてこ」), a solo
+    ドヤ that keeps a pleased mouth for 20s after, and the break-start
+    ritual (「はい、そこまで」→ 5s → eyes closed 「うぅ、疲れたぁ」).
+    Timer milestones cancel any in-flight sequence (generation token)
+    so the face and the voice never disagree.
   - **Timer ring** is always accent — `secondary` stays reserved for
     persistent alive states and is unused on this tab. Phase is
     conveyed by the label (待機/作業中/休憩中/どうする?), not by

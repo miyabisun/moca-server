@@ -14,14 +14,15 @@
 	import * as api from '$lib/api.js';
 	import { play, playAll, stop, player } from '$lib/player.svelte.js';
 	import { addToast } from '$lib/toast.svelte.js';
+	import { router, navigate } from '$lib/router.svelte.js';
 
 	let projects = $state(null);
 	let selectedId = $state(null);
 	let selected = $state(null); // full project detail with lines
-	// Which top-level view is active. 台本 = two-pane workspace, 辞書 = dictionary,
-	// 作業 = pomodoro work-companion. Global vim shortcuts stay 台本-only
-	// (onWindowKeydown bails on the other tabs).
-	let activeTab = $state('script');
+	// Which top-level view is active (router.tab): 台本 = two-pane workspace,
+	// 辞書 = dictionary, 作業 = pomodoro work-companion. タブは URL (/, /dict,
+	// /work) と同期し、リロードしても保たれる。Global vim shortcuts stay
+	// 台本-only (onWindowKeydown bails on the other tabs).
 	// Pour-in modal state. `afterLineId` inserts after that line; null = append end.
 	let pourIn = $state(false);
 	let pourInAfter = $state(null);
@@ -445,7 +446,7 @@
 	function onWindowKeydown(e) {
 		// Global shortcuts only on the 台本 tab, never while typing, inside a modal,
 		// mid-IME-composition, or with a modifier held (leave those to the browser).
-		if (activeTab !== 'script') return;
+		if (router.tab !== 'script') return;
 		if (e.isComposing) return;
 		if (editableFocused()) return;
 		if (anyModalOpen()) return;
@@ -587,20 +588,20 @@
 	<header class="app-header">
 		<span class="site-title">宮舞モカ 台本工房</span>
 		<nav class="tabs">
-			<button type="button" class:active={activeTab === 'script'} onclick={() => (activeTab = 'script')}>
+			<button type="button" class:active={router.tab === 'script'} onclick={() => navigate('script')}>
 				台本
 			</button>
-			<button type="button" class:active={activeTab === 'dict'} onclick={() => (activeTab = 'dict')}>
+			<button type="button" class:active={router.tab === 'dict'} onclick={() => navigate('dict')}>
 				辞書
 			</button>
-			<button type="button" class:active={activeTab === 'work'} onclick={() => (activeTab = 'work')}>
+			<button type="button" class:active={router.tab === 'work'} onclick={() => navigate('work')}>
 				作業
 			</button>
 		</nav>
 		<NotifySubscribe bind:this={notify} />
 	</header>
 
-	{#if activeTab === 'script'}
+	{#if router.tab === 'script'}
 		<div class="layout" data-active-col={focusCol}>
 			<aside class="list-pane">
 				<ProjectList
@@ -638,7 +639,7 @@
 				{/if}
 			</main>
 		</div>
-	{:else if activeTab === 'dict'}
+	{:else if router.tab === 'dict'}
 		<main class="dict-view">
 			<DictionaryView />
 		</main>

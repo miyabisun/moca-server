@@ -1,15 +1,15 @@
 <script>
 	// 背景演出 (純 CSS/SVG、ロジックなし — タイマーや音声には一切触れない)。
 	//
-	// 構図はモカのノート PC のカメラが写す「彼女の部屋 (6畳の長方形)」で、
-	// 細い上辺沿いにデスクを置き、部屋の奥へ向けて撮っている想定 (ユーザー確定):
-	// - カメラから見て左が窓のある側面の壁 (腰高からの窓、パースで奥の縦幅が縮む)
-	// - 右がクローゼットのある側面の壁 (写したくないので強い角度でほぼ見切れ)
-	// - 奥 (背面の壁) に部屋の出入り口。6畳なので近く、ドアの下部は見切れる
-	// - デスク上のカメラは座ったモカ (頭の高さ ≈ 120cm) をやや見上げるアングル
-	//   なので、床は決して写らず、天井 (高さ ≈ 230cm) の縁が上に写る
-	// - 側面と背面の壁の境界には黒い縦線を引き、箱としての角を明示する
-	// - ベッドはカメラに写さない (コンプライアンス)
+	// 構図はモカのノート PC のカメラが写す「彼女の部屋 (6畳)」。position:absolute の
+	// 貼り絵で 3D 空間を厳密に再現することはできないので、嘘がバレる要素は描かない
+	// (ユーザー確定): 天井・床・右壁は描かず、「左側面の窓 + 壁境界の縦線 1 本 +
+	// 奥のドア」だけで部屋を成立させる。
+	// - 窓は左側面の壁に付いている: 左端は画面外に見切れ (left:-20px)、強い
+	//   rotateY で向こう側 (右) の縦幅が大きく縮む。下端はモカの肩の高さあたり
+	// - 縦線 (left:600px) = 左側面の壁と奥の壁の境界。窓とは重ならない
+	// - ドア (left:700px) は奥の壁。カメラは机上から見上げているので下部は見切れ、
+	//   上端は窓の奥側上角とだいたい同じ高さに揃う
 	//
 	// 時間帯 4 種 (dawn 5-8 / day 8-16 / dusk 16-19 / night 19-4) で窓の外の空と
 	// 室内の明るさが変わる。グラデーションは transition できないため、層を重ねて
@@ -33,27 +33,19 @@
 </script>
 
 <div class="scene" data-band={band} aria-hidden="true">
-	<!-- 背面の壁 (時間帯で明度が変わる 4 層クロスフェード) -->
+	<!-- 壁 (時間帯で明度が変わる 4 層クロスフェード) -->
 	<div class="wall dawn"></div>
 	<div class="wall day"></div>
 	<div class="wall dusk"></div>
 	<div class="wall night"></div>
 
-	<!-- 天井。カメラが見上げているので上端に縁が写る -->
-	<div class="ceiling"></div>
+	<!-- 左側面の壁と奥の壁の境界 (箱の角) -->
+	<div class="corner"></div>
 
-	<!-- 部屋の出入り口。6畳なので近い = 大きく、下部はフレーム外に見切れる -->
+	<!-- 奥の壁の出入り口。近いので大きく、下部はフレーム外に見切れる -->
 	<div class="door"><span class="knob"></span></div>
 
-	<!-- 側面と背面の壁の境界 (箱の角)。左右 2 本の黒い縦線 -->
-	<div class="corner left"></div>
-	<div class="corner right"></div>
-
-	<!-- 側面の壁の陰 (角から手前へ向かうほど暗く) -->
-	<div class="sideshade left"></div>
-	<div class="sideshade right"></div>
-
-	<!-- 左側面の窓。origin 左の rotateY で、奥 (右) 側の縦幅が縮む -->
+	<!-- 左側面の窓。左端見切れ + 強い rotateY で奥側の縦幅が縮む -->
 	<div class="window-wrap">
 		<div class="sky dawn"></div>
 		<div class="sky day"></div>
@@ -73,9 +65,6 @@
 		<span class="sash h"></span>
 	</div>
 
-	<!-- 右側面のクローゼット。強い角度でほぼ見切れ (写したくない家具) -->
-	<div class="closet"></div>
-
 	<!-- 夕方以降だけ灯る、デスクランプの光だまり (デスクはフレーム下の外) -->
 	<div class="lamp"></div>
 
@@ -90,7 +79,7 @@
 	position: absolute
 	inset: 0
 	overflow: hidden
-	// 窓・クローゼットの rotateY にパースを与える共通視点
+	// 窓の rotateY にパースを与える視点
 	perspective: 1100px
 	// 壁 4 層は opacity クロスフェードするため、切替の途中で合成被覆率が
 	// 一瞬下がる。素の背景が透けないよう不透明な基底色を敷いておく
@@ -120,54 +109,33 @@
 .scene[data-band='night'] .wall.night
 	opacity: 1
 
-// 天井の縁。見上げアングルの証拠として上端に暗い帯 + くっきりした境界線
-.ceiling
-	position: absolute
-	top: 0
-	left: 0
-	right: 0
-	height: 9%
-	background: rgba(0, 0, 0, 0.22)
-	border-bottom: 3px solid rgba(0, 0, 0, 0.45)
-
-// 箱の角: 側面の壁と背面の壁の境界線
+// 左側面の壁と奥の壁の境界線。窓が跨がない固定位置 (窓の投影幅より右)
 .corner
 	position: absolute
 	top: 0
 	bottom: 0
+	left: 600px
 	width: 5px
 	background: rgba(0, 0, 0, 0.5)
 
-	&.left
-		left: 27%
-
-	&.right
-		right: 27%
-
-// 側面の壁は手前 (フレーム端) ほど暗く落として奥行きを出す
-.sideshade
+// 左端 (カメラ側) ほど側面の壁を暗く落として、横壁であることを示す
+.scene::after
+	content: ''
 	position: absolute
 	top: 0
 	bottom: 0
+	left: 0
+	width: 600px
 	pointer-events: none
+	background: linear-gradient(to left, transparent, rgba(0, 0, 0, 0.3))
 
-	&.left
-		left: 0
-		width: 27%
-		background: linear-gradient(to left, transparent, rgba(0, 0, 0, 0.28))
-
-	&.right
-		right: 0
-		width: 27%
-		background: linear-gradient(to right, transparent, rgba(0, 0, 0, 0.28))
-
-// 出入り口。背面の壁に付いた板ドア。6畳なので近い = 大きく、下は見切れる
+// 出入り口。奥の壁に付いた板ドア。6畳なので近い = 大きく、下は見切れる
 .door
 	position: absolute
-	left: 52%
+	left: 700px
+	top: 14vh
 	bottom: -8%
-	width: 17%
-	height: 82%
+	width: 230px
 	background: linear-gradient(180deg, #55402e, #4a3728)
 	border: 4px solid rgba(0, 0, 0, 0.25)
 	border-bottom: none
@@ -177,23 +145,24 @@
 	.knob
 		position: absolute
 		left: 8%
-		top: 52%
-		width: 9px
-		height: 9px
+		top: 46%
+		width: 10px
+		height: 10px
 		border-radius: var(--radius-full)
 		background: #b8a06a
 
-// 左側面の窓。origin を左端に置いた rotateY 正で、奥 (右) 側が z 奥へ倒れて縮む
-// (x>0 で z' = -x·sinθ < 0)。「腰の高さから」なので下端は画面下で見切れる手前。
+// 左側面の窓 (ユーザー指定値)。origin 左 + rotateY(60deg) で右 (奥) 側が大きく
+// 縮む台形になり、左端は見切れているので「拡大していない」ことがバレない。
+// 下端 (窓台) は床から 90cm 想定 = 画面内ではモカの肩の高さあたり。
 .window-wrap
 	position: absolute
-	left: -2%
-	top: 16%
-	width: 30%
-	height: 60%
+	left: -20px
+	top: 4vh
+	width: 500px
+	height: 80vh
 	transform-origin: left center
-	transform: rotateY(34deg)
-	border: 12px solid #241c16
+	transform: rotateY(60deg)
+	border: 14px solid #241c16
 	border-radius: 3px
 	overflow: hidden
 	// 空 4 層のクロスフェード中に透けないよう、窓の中も不透明な基底色を敷く
@@ -258,28 +227,14 @@
 		top: 0
 		bottom: 0
 		left: 50%
-		width: 8px
+		width: 10px
 		transform: translateX(-50%)
 
 	&.h
 		left: 0
 		right: 0
 		top: 46%
-		height: 8px
-
-// 右側面のクローゼット。origin 右の rotateY 負で、奥 (左) 側が z 奥へ倒れる
-// (x<0 で z' = -x·sinθ < 0)。
-.closet
-	position: absolute
-	right: -9%
-	top: 4%
-	width: 18%
-	height: 92%
-	transform-origin: right center
-	transform: rotateY(-52deg)
-	background: linear-gradient(270deg, #453a32, #382f29)
-	border-left: 4px solid rgba(0, 0, 0, 0.3)
-	box-shadow: inset 14px 0 22px rgba(0, 0, 0, 0.3)
+		height: 10px
 
 // デスクランプの光だまり。dusk / night だけふわっと灯り、夜の室内の主光源になる。
 // デスク自体はカメラの下 (フレーム外) なので、光だけが下から差す

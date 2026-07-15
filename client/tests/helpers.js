@@ -109,7 +109,8 @@ export async function installApi(
 		return null;
 	};
 
-	await page.route(/\/(api|analyze|say|notify|work)\b/, async (route) => {
+	// /work はタブの URL (ドキュメント遷移) なので、モックは API の /work/talk だけを掴む。
+	await page.route(/\/(api|analyze|say|notify|work\/talk)\b/, async (route) => {
 		const req = route.request();
 		const method = req.method();
 		const path = new URL(req.url()).pathname;

@@ -22,7 +22,8 @@ export default defineConfig({
 			'/say': 'http://localhost:3000',
 			'/analyze': 'http://localhost:3000',
 			'/notify': 'http://localhost:3000',
-			'/work': 'http://localhost:3000',
+			// /work はタブの URL なので、プロキシは API パスだけに絞る
+			'/work/talk': 'http://localhost:3000',
 			'/moca-assets': 'http://localhost:3000'
 		}
 	}

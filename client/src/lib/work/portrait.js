@@ -71,10 +71,11 @@ export const EYES = {
 		}
 	},
 	// 例外セット: 閉じ口ベース欠落。休止口は「ん」(213) で代用する。
+	// 半眼は作業中のデフォルト顔なので、瞬きは素の目閉じ (014) で行う。
 	sleepy: {
 		label: '眠そう',
 		rest: 213,
-		blink: null,
+		blink: 'normalBlink',
 		mouths: {
 			rest: null,
 			a: 208,
@@ -103,16 +104,5 @@ export function imageFor(eyeKey, mouthKey = 'rest') {
 	return `/moca-assets/moca_illust/${pad3(file)}.png`;
 }
 
-// セリフの感情サマリ ({axis: max0-100}) から目元セットを選ぶ。しきい値未満は
-// 素の表情のまま。セリフ側の感情は控えめ運用 (honwaka ≤ 20、独り言は素〜30) に
-// 合わせて、しきい値も低めに取る。優先順は「強い表現ほど勝つ」。
-export function eyeForEmotion(summary, fallback = 'normal') {
-	if (!summary) return fallback;
-	const v = (k) => summary[k] ?? 0;
-	if (v('angry') >= 15) return 'serious';
-	if (v('teary') >= 15) return 'teary';
-	if (v('doyaru') >= 15) return 'smile';
-	if (v('honwaka') >= 15) return 'smile';
-	if (v('bosoboso') >= 40) return 'sleepy';
-	return fallback;
-}
+// 表情はセリフ側で明示的に割り振る方式 (lines.js の {eye, script}) に変えたため、
+// 感情サマリからの推定関数はここには置かない。

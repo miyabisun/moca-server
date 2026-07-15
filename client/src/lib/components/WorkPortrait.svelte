@@ -1,8 +1,7 @@
 <script>
 	import { timer } from '$lib/work/timer.svelte.js';
 	import { voice } from '$lib/work/voice.svelte.js';
-	import { EYES, imageFor, eyeForEmotion } from '$lib/work/portrait.js';
-	import { summarizeEmotion } from '$lib/emotions.js';
+	import { EYES, imageFor } from '$lib/work/portrait.js';
 
 	// 立ち絵レイヤー。表情 (目元) × 口の 2 軸を <img> の差し替えだけで動かす —
 	// Live2D 不使用のパラパラ漫画方式。将来 MMD 版と差し替えられるよう、外部への
@@ -29,48 +28,11 @@
 		return () => rmQuery.removeEventListener('change', onChange);
 	});
 
-	// ベース表情はドリフトさせる。年頃の少女がずっと真顔は不自然 (ユーザー確定):
-	// しかめっ面 (真剣)・半眼ジト・目瞑り・眠そう・たまにサボってる感を、
-	// 20〜50 秒ごとに重み付きプールから引き直す。声かけ中はセリフの感情が勝つ。
-	const WORK_POOL = [
-		'normal',
-		'normal',
-		'normal',
-		'serious',
-		'serious',
-		'tearyJito',
-		'tearyJito',
-		'sleepy',
-		'sleepy',
-		'smileClosed',
-		'smile'
-	];
-	const BREAK_POOL = ['smile', 'smile', 'smileClosed', 'smileClosed', 'sleepy', 'normal'];
-	let idleEye = $state('normal');
-	$effect(() => {
-		const pool = timer.phase === 'break' ? BREAK_POOL : WORK_POOL;
-		idleEye = timer.phase === 'break' ? 'smile' : 'normal'; // フェーズ切替の初期顔
-		let alive = true;
-		let t = null;
-		const loop = () => {
-			t = setTimeout(
-				() => {
-					if (!alive) return;
-					idleEye = pool[Math.floor(Math.random() * pool.length)];
-					loop();
-				},
-				20_000 + Math.random() * 30_000
-			);
-		};
-		loop();
-		return () => {
-			alive = false;
-			clearTimeout(t);
-		};
-	});
-	let eye = $derived(
-		voice.speaking ? eyeForEmotion(summarizeEmotion(voice.currentScript), idleEye) : idleEye
-	);
+	// アイドル顔は固定 (ユーザー確定: 表情はセリフ・演出に割り振り、デフォルトは
+	// 動かさない)。作業中 = 半眼 (sleepy) で手元に集中、休憩中と待機中 = 001 で
+	// こちらを見る。voice.expression (セリフごとの表情・目閉じホールド) が最優先。
+	let idleEye = $derived(timer.phase === 'work' ? 'sleepy' : 'normal');
+	let eye = $derived(voice.expression ?? idleEye);
 
 	// 瞬き: 3〜8 秒間隔で 120ms だけ瞬き差分セットに切り替える。瞬きペアの無い
 	// 表情 (目閉じ系・眠そう) はスキップ。発話中も止める — 瞬き×口の組み合わせ
@@ -122,10 +84,11 @@
 		};
 	});
 
+	// 口元: 発話中は口パク、非発話時は演出の余韻 (moodMouth) があればそれ、なければ休止。
 	let src = $derived.by(() => {
 		const def = EYES[eye];
 		const shownEye = blinking && def?.blink ? def.blink : eye;
-		return imageFor(shownEye, voice.speaking ? mouth : 'rest');
+		return imageFor(shownEye, voice.speaking ? mouth : (voice.moodMouth ?? 'rest'));
 	});
 
 	// 表情が変わったら、その表情の口パク全種 (rest+母音6) と瞬きだけ温める
