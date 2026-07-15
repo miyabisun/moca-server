@@ -1,6 +1,12 @@
 <script>
 	import { timer, start, pause, reset, updateSettings } from '$lib/work/timer.svelte.js';
-	import { voice, toggle as toggleVoice, setChatter } from '$lib/work/voice.svelte.js';
+	import { voice, unlock, setChatter } from '$lib/work/voice.svelte.js';
+
+	// 声かけは常時 ON。autoplay の解錠だけは開始ボタンのジェスチャ内で行う。
+	function startWithVoice() {
+		unlock();
+		start();
+	}
 
 	// ポモドーロの操作盤。状態はすべて timer / voice モジュールが持ち、この
 	// コンポーネントは表示専用 — タブを離れて destroy されてもタイマーは進む。
@@ -51,7 +57,7 @@
 		{#if timer.running}
 			<button type="button" class="primary" onclick={pause}>一時停止</button>
 		{:else}
-			<button type="button" class="primary" onclick={start}>
+			<button type="button" class="primary" onclick={startWithVoice}>
 				{timer.asking ? 'もう1セット' : timer.phase === 'idle' ? '開始' : '再開'}
 			</button>
 		{/if}
@@ -63,48 +69,43 @@
 		>
 			終了
 		</button>
-		<button
-			type="button"
-			class="quiet voice"
-			class:on={voice.enabled}
-			aria-pressed={voice.enabled}
-			onclick={toggleVoice}
-		>
-			声かけ {voice.enabled ? 'ON' : 'OFF'}
-		</button>
 	</div>
 
 	<div class="settings">
-		<label>
-			作業
-			<input
-				type="number"
-				min="1"
-				max="180"
-				value={timer.settings.workMin}
-				onchange={(e) => setNum('workMin', e.currentTarget.value)}
-			/>
-			分
-		</label>
-		<label>
-			休憩
-			<input
-				type="number"
-				min="1"
-				max="60"
-				value={timer.settings.breakMin}
-				onchange={(e) => setNum('breakMin', e.currentTarget.value)}
-			/>
-			分
-		</label>
-		<label>
-			おしゃべり
-			<select value={voice.chatter} onchange={(e) => setChatter(e.currentTarget.value)}>
-				<option value="normal">ふつう</option>
-				<option value="sparse">ひかえめ</option>
-				<option value="off">なし</option>
-			</select>
-		</label>
+		<div class="row">
+			<label>
+				作業
+				<input
+					type="number"
+					min="1"
+					max="180"
+					value={timer.settings.workMin}
+					onchange={(e) => setNum('workMin', e.currentTarget.value)}
+				/>
+				分
+			</label>
+			<label>
+				休憩
+				<input
+					type="number"
+					min="1"
+					max="60"
+					value={timer.settings.breakMin}
+					onchange={(e) => setNum('breakMin', e.currentTarget.value)}
+				/>
+				分
+			</label>
+		</div>
+		<div class="row">
+			<label>
+				おしゃべり
+				<select value={voice.chatter} onchange={(e) => setChatter(e.currentTarget.value)}>
+					<option value="normal">ふつう</option>
+					<option value="sparse">ひかえめ</option>
+					<option value="off">なし</option>
+				</select>
+			</label>
+		</div>
 	</div>
 </section>
 
@@ -190,15 +191,18 @@
 			opacity: 0.5
 			cursor: not-allowed
 
-	.voice.on
-		color: var(--c-secondary)
-		border-color: var(--c-secondary)
-
+// 2 段組 (時間の行 / おしゃべりの行)。横に並べないことでパネルの幅を細く保つ
 .settings
 	display: flex
-	gap: var(--sp-4)
+	flex-direction: column
+	align-items: center
+	gap: var(--sp-2)
 	font-size: var(--fs-sm)
 	color: var(--c-text-sub)
+
+	.row
+		display: flex
+		gap: var(--sp-4)
 
 	label
 		display: inline-flex

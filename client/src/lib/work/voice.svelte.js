@@ -36,7 +36,6 @@ function loadChatter() {
 	}
 }
 
-let enabled = $state(false);
 let speaking = $state(false); // 再生中フラグ (WorkPortrait の口パクが購読する)
 let currentScript = $state(null); // 再生中の script JSON (表情選択が感情サマリに使う)
 let chatter = $state(loadChatter()); // 'normal' | 'sparse' | 'off'
@@ -46,12 +45,6 @@ let objectUrl = null;
 let queue = [];
 let playing = false;
 let controller = null; // in-flight の /say fetch
-// OFF は世代番号で無効化する (player.svelte.js の token と同じ発想)。enabled
-// フラグだけだと OFF→ON の素早い往復で中断前の音声が蘇生してしまう。
-let generation = 0;
-// 再生待ち Promise の resolver。OFF 時に明示 resolve しないと、pause()+load()
-// は ended/error を発火せず drain() が playing=true のまま永久停止する。
-let stopCurrent = null;
 
 function revoke() {
 	if (objectUrl) {
@@ -66,7 +59,6 @@ async function drain() {
 	if (entry == null) return;
 	const { script, volume } = entry;
 	playing = true;
-	const gen = generation;
 	try {
 		controller = new AbortController();
 		const res = await fetch('/say', {
@@ -75,7 +67,6 @@ async function drain() {
 		});
 		if (!res.ok) throw new Error(`/say ${res.status}`);
 		const blob = await res.blob();
-		if (gen !== generation) return; // 合成中に OFF にされた
 		revoke();
 		objectUrl = URL.createObjectURL(blob);
 		audio ??= new Audio();
@@ -84,7 +75,6 @@ async function drain() {
 		currentScript = script;
 		speaking = true;
 		await new Promise((resolve) => {
-			stopCurrent = resolve;
 			audio.onended = resolve;
 			audio.onerror = resolve;
 			audio.play().catch(resolve);
@@ -92,7 +82,6 @@ async function drain() {
 	} catch {
 		// fire-and-forget: 失敗は握りつぶして次のセリフへ
 	} finally {
-		stopCurrent = null;
 		controller = null;
 		speaking = false;
 		currentScript = null;
@@ -105,7 +94,7 @@ async function drain() {
 // script JSON を直接キューに積む。節目・チャッター・LLM 生成すべてこの 1 本を通る。
 // volume は再生時の Audio.volume (独り言 = MUTTER_VOLUME、節目 = 等倍)。
 export function speakScript(script, volume = 1) {
-	if (!enabled || !script) return;
+	if (!script) return;
 	queue.push({ script, volume });
 	drain();
 }
@@ -126,7 +115,6 @@ async function speakGenerated(kind, fallbackCategory, volume = 1) {
 		return;
 	}
 	llmInFlight = true;
-	const gen = generation;
 	llmController = new AbortController();
 	const deadline = setTimeout(() => llmController?.abort(), LLM_TIMEOUT_MS);
 	try {
@@ -135,10 +123,8 @@ async function speakGenerated(kind, fallbackCategory, volume = 1) {
 			hour: new Date().getHours()
 		};
 		const script = await workTalk(kind, context, llmController.signal);
-		if (gen !== generation) return;
 		speakScript(script, volume);
 	} catch {
-		if (gen !== generation) return;
 		speakCategory(fallbackCategory, volume);
 	} finally {
 		clearTimeout(deadline);
@@ -147,25 +133,12 @@ async function speakGenerated(kind, fallbackCategory, volume = 1) {
 	}
 }
 
-// ON/OFF トグル。ON はユーザージェスチャ内で呼ぶこと — 同期的に鳴らす無音の
-// play() が autoplay を解錠する (NotifySubscribe.subscribe と同じ理由)。
-export function toggle() {
-	enabled = !enabled;
-	if (enabled) {
-		new Audio().play().catch(() => {});
-	} else {
-		generation += 1; // 以降、旧世代の合成結果は捨てられる
-		queue = [];
-		controller?.abort();
-		llmController?.abort();
-		if (audio) {
-			audio.pause();
-			audio.removeAttribute('src');
-			audio.load();
-		}
-		stopCurrent?.(); // 再生待ちを解除して drain を確実に終わらせる
-		speaking = false;
-	}
+// 声かけは常時 ON (ユーザー確定: OFF がデフォルトなら普通のポモドーロと変わらない。
+// 消したければ「おしゃべり: なし」で足りる)。autoplay の解錠だけはユーザー
+// ジェスチャが必要なので、開始ボタンのクリックハンドラから同期的に呼んでもらう
+// (NotifySubscribe.subscribe と同じ理由)。
+export function unlock() {
+	new Audio().play().catch(() => {});
 }
 
 export function setChatter(mode) {
@@ -181,9 +154,6 @@ export function setChatter(mode) {
 }
 
 export const voice = {
-	get enabled() {
-		return enabled;
-	},
 	get speaking() {
 		return speaking;
 	},
@@ -232,7 +202,7 @@ function fireChatter() {
 	}
 	// たまに時事ネタ (AI 界隈・流行りのゲーム) を LLM で拾ってきて喋る。
 	// 独り言・雑談は音量を絞る (大声の独り言は邪魔)。
-	if (enabled && Math.random() < NEWS_PROBABILITY) speakGenerated('news', 'midWork', MUTTER_VOLUME);
+	if (Math.random() < NEWS_PROBABILITY) speakGenerated('news', 'midWork', MUTTER_VOLUME);
 	else speakCategory('midWork', MUTTER_VOLUME);
 	armChatter();
 }
@@ -254,7 +224,7 @@ onTransition((event) => {
 		const category = CATEGORY_BY_EVENT[event];
 		if (category) {
 			// 節目もたまに LLM 生成でバリエーションを出す (失敗は固定セリフ)。
-			if (enabled && Math.random() < LLM_PROBABILITY) speakGenerated('milestone', category);
+			if (Math.random() < LLM_PROBABILITY) speakGenerated('milestone', category);
 			else speakCategory(category);
 		}
 	}

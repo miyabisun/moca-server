@@ -379,9 +379,11 @@ Domain components on top of the Sumi recipes:
     (frowns, half-lidded eyes, closed eyes, the occasional slacking
     face) so she never sits frozen in a neutral stare.
   - **Timer ring** is always accent — `secondary` stays reserved for
-    persistent alive states, which here is only the 声かけ ON toggle
-    (same family as the notify megaphone). Phase is conveyed by the
-    label (待機/作業中/休憩中), not by recoloring the ring.
+    persistent alive states and is unused on this tab. Phase is
+    conveyed by the label (待機/作業中/休憩中/どうする?), not by
+    recoloring the ring. The voice has no ON/OFF toggle — a silent
+    companion is just another pomodoro timer; おしゃべり「なし」is the
+    quiet option, and autoplay is unlocked by the 開始 click itself.
   - **Portrait:** the official 232-PNG diff set (18 eye-sets × 13
     mouths; two sets ship with 12, so the manifest is an explicit
     table, not arithmetic — served from `MOCA_ASSETS_DIR` via
