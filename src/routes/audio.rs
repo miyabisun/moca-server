@@ -2,7 +2,9 @@
 //   GET /api/projects/{id}/lines/{lineId}/audio.wav — 保存済みの行を合成し WAV で返す
 //     (動画素材は可逆が正なので Accept 不問で常に WAV)。
 
-use crate::dictionary::{apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry};
+use crate::dictionary::{
+    apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry,
+};
 use crate::error::AppError;
 use crate::fallback::FallbackDict;
 use crate::serialize::get_line;
@@ -53,7 +55,11 @@ async fn audio_wav(
     };
 
     // 動画素材は可逆が正なので Accept 不問で常に WAV。say の WAV 経路をそのまま通す。
-    Ok(super::say::stream_response(&state, segments, OutputFormat::Wav))
+    Ok(super::say::stream_response(
+        &state,
+        segments,
+        OutputFormat::Wav,
+    ))
 }
 
 /// 保存済み script 文字列 (保存時に検証済み) を parse し、各 segment.text に
@@ -231,7 +237,8 @@ mod tests {
         let pid = insert_project(&state, "P");
         let lid = insert_line(&state, pid, "announcer", "こんにちは。", None);
         let app = routes().with_state(state);
-        let (status, body) = send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
+        let (status, body) =
+            send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.starts_with(&riff_prefix()));
     }
@@ -245,12 +252,16 @@ mod tests {
         let script = r#"[{"text":"このGPU。","emotion":{"honwaka":60}}]"#;
         let lid = insert_line(&state, pid, "acting", "無視される", Some(script));
         let app = routes().with_state(state);
-        let (status, body) = send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
+        let (status, body) =
+            send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.starts_with(&riff_prefix()));
         // 辞書が script の text に適用されている。
         let recorded = std::fs::read_to_string(&fake.record).unwrap();
-        assert!(recorded.contains("このジーピーユー。"), "recorded: {recorded}");
+        assert!(
+            recorded.contains("このジーピーユー。"),
+            "recorded: {recorded}"
+        );
     }
 
     #[tokio::test]
@@ -261,7 +272,8 @@ mod tests {
         // acting だが script は NULL → text 文分割経路に落ちる (404/500 にしない)。
         let lid = insert_line(&state, pid, "acting", "一。二。", None);
         let app = routes().with_state(state);
-        let (status, body) = send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
+        let (status, body) =
+            send(&app, &format!("/api/projects/{pid}/lines/{lid}/audio.wav")).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.starts_with(&riff_prefix()));
         let recorded = std::fs::read_to_string(&fake.record).unwrap();

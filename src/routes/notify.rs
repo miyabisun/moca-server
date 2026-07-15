@@ -35,7 +35,9 @@ async fn notify(State(state): State<AppState>, body: Bytes) -> Result<Response, 
 /// GET /notify/stream: broadcast を購読し data のみの SSE で流す。
 /// SPA は es.onmessage (無名イベント) を購読するので event 名は付けない。
 /// 切断で rx が drop され自動クリーンアップされる。
-async fn stream(State(state): State<AppState>) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+async fn stream(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let rx = state.notify.subscribe();
     // Lagged (取りこぼし) は skip し、受信テキストを data 行にする。
     let stream = BroadcastStream::new(rx).filter_map(|msg| match msg {

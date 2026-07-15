@@ -87,7 +87,9 @@ async fn remove(State(state): State<AppState>, Path(id): Path<String>) -> JsonRe
     let id = parse_id(&id)?;
     let conn = state.db.lock().unwrap();
     let exists: Option<i64> = conn
-        .query_row("SELECT id FROM dictionary WHERE id = ?1", [id], |r| r.get(0))
+        .query_row("SELECT id FROM dictionary WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
         .optional()?;
     if exists.is_none() {
         return Err(AppError::NotFound("not found".into()));

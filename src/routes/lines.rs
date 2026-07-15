@@ -55,11 +55,7 @@ fn project_exists(conn: &Connection, id: i64) -> rusqlite::Result<bool> {
 }
 
 // 行追加 (position は末尾)
-async fn add(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> JsonResult {
+async fn add(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> JsonResult {
     let project_id = parse_id(&id)?;
     let body = parse_body(&body);
 
@@ -104,11 +100,7 @@ async fn add(
 }
 
 // 行更新 (text / script / mode)。script は validateScript を通してから保存 (不正は 400)。
-async fn update(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> JsonResult {
+async fn update(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> JsonResult {
     let id = parse_id(&id)?;
     let body = parse_body(&body);
 
@@ -214,11 +206,7 @@ fn to_number(value: &Value) -> Option<f64> {
 }
 
 // 並び順一括更新 (id 配列を受け position を 0..n で振り直す)
-async fn reorder(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> JsonResult {
+async fn reorder(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> JsonResult {
     let project_id = parse_id(&id)?;
     let body = parse_body(&body);
 
@@ -325,7 +313,11 @@ async fn import(
     // announcer: 一括 insert して JSON で即返す。
     let conn = state.db.lock().unwrap();
     if texts.is_empty() {
-        return Ok((StatusCode::OK, Json(json!({ "mode": "announcer", "created": [] }))).into_response());
+        return Ok((
+            StatusCode::OK,
+            Json(json!({ "mode": "announcer", "created": [] })),
+        )
+            .into_response());
     }
     let mut created: Vec<Value> = Vec::with_capacity(texts.len());
     for (i, text) in texts.iter().enumerate() {
@@ -339,17 +331,16 @@ async fn import(
         created.push(serialize_line(&row));
     }
     touch_project(&conn, project_id)?;
-    Ok((StatusCode::OK, Json(json!({ "mode": "announcer", "created": created }))).into_response())
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "mode": "announcer", "created": created })),
+    )
+        .into_response())
 }
 
 // acting 流し込み: SSE で 1 行ずつ進捗を流す。分析失敗行は announcer として保存し、
 // クライアント切断 (受信側 drop) で中断する (保存済み行は残す)。
-fn import_acting(
-    state: AppState,
-    project_id: i64,
-    texts: Vec<String>,
-    start_pos: i64,
-) -> Response {
+fn import_acting(state: AppState, project_id: i64, texts: Vec<String>, start_pos: i64) -> Response {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(4);
 
     tokio::spawn(async move {
@@ -391,7 +382,11 @@ fn import_acting(
                 "status": status,
                 "line": serialize_line(&row),
             });
-            if tx.send(Ok(Event::default().data(payload.to_string()))).await.is_err() {
+            if tx
+                .send(Ok(Event::default().data(payload.to_string())))
+                .await
+                .is_err()
+            {
                 break; // 受信側 drop = クライアント切断。
             }
         }

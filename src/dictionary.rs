@@ -56,7 +56,7 @@ pub fn apply_dictionary(text: &str, entries: &[DictEntry]) -> String {
         })
         .collect();
     // 最長一致優先で surface 長さ (char 数) 降順に並べる。
-    rules.sort_by(|a, b| b.needle.len().cmp(&a.needle.len()));
+    rules.sort_by_key(|rule| std::cmp::Reverse(rule.needle.len()));
 
     let chars: Vec<char> = text.chars().collect();
     // ASCII 照合用に大小無視した並列配列 (非ASCII は原文のまま = 位置ずれしない)。
@@ -70,7 +70,11 @@ pub fn apply_dictionary(text: &str, entries: &[DictEntry]) -> String {
             if end > chars.len() {
                 return false;
             }
-            let hay = if r.ascii { &lower[i..end] } else { &chars[i..end] };
+            let hay = if r.ascii {
+                &lower[i..end]
+            } else {
+                &chars[i..end]
+            };
             hay == r.needle.as_slice()
         });
         if let Some(r) = hit {
@@ -128,7 +132,10 @@ mod tests {
             entry("ハード", "はーど"),
             entry("ハードディスク", "かたいえんばん"),
         ];
-        assert_eq!(apply_dictionary("ハードディスク", &entries), "かたいえんばん");
+        assert_eq!(
+            apply_dictionary("ハードディスク", &entries),
+            "かたいえんばん"
+        );
         assert_eq!(apply_dictionary("ハードだ", &entries), "はーどだ");
     }
 

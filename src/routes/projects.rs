@@ -17,16 +17,14 @@ use super::{parse_body, parse_id, JsonResult};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/projects", get(list).post(create))
-        .route("/api/projects/{id}", get(get_one).patch(rename).delete(remove))
+        .route(
+            "/api/projects/{id}",
+            get(get_one).patch(rename).delete(remove),
+        )
 }
 
 // project 行 (全列) を Value にする。
-fn project_value(
-    id: i64,
-    name: String,
-    created_at: String,
-    updated_at: String,
-) -> Value {
+fn project_value(id: i64, name: String, created_at: String, updated_at: String) -> Value {
     json!({ "id": id, "name": name, "created_at": created_at, "updated_at": updated_at })
 }
 
@@ -102,11 +100,7 @@ async fn get_one(State(state): State<AppState>, Path(id): Path<String>) -> JsonR
 }
 
 // 改名 (updated_at 更新)
-async fn rename(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> JsonResult {
+async fn rename(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> JsonResult {
     let id = parse_id(&id)?;
     let body = parse_body(&body);
     let name = body

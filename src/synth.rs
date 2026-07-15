@@ -203,7 +203,11 @@ pub async fn stream_synthesis(
 }
 
 /// WAV 経路 (動画素材用の可逆出力): ヘッダ + 各 PCM + pause 無音をそのまま送る。
-async fn stream_wav(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<Bytes, std::io::Error>>) {
+async fn stream_wav(
+    cfg: &SynthConfig,
+    segments: &[Value],
+    tx: &Sender<Result<Bytes, std::io::Error>>,
+) {
     // 最初にヘッダを送る → 1 文目完成時点で再生が始まる体感を保つ。
     if tx
         .send(Ok(Bytes::from(wav_header(&MOCA_FORMAT))))
@@ -231,7 +235,11 @@ async fn stream_wav(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<By
 
 /// Opus 経路: PCM を Ogg/Opus へ逐次エンコードし、セグメント完了ごとに
 /// 出来上がった Ogg ページをチャンク送信する (セグメント間ストリーミング維持)。
-async fn stream_opus(cfg: &SynthConfig, segments: &[Value], tx: &Sender<Result<Bytes, std::io::Error>>) {
+async fn stream_opus(
+    cfg: &SynthConfig,
+    segments: &[Value],
+    tx: &Sender<Result<Bytes, std::io::Error>>,
+) {
     let mut stream = match OpusStream::new() {
         Ok(s) => s,
         Err(e) => {
@@ -315,10 +323,7 @@ mod tests {
             split_sentences("こんにちは。今日はいい天気。"),
             vec!["こんにちは。", "今日はいい天気。"]
         );
-        assert_eq!(
-            split_sentences("一行目\n二行目"),
-            vec!["一行目", "二行目"]
-        );
+        assert_eq!(split_sentences("一行目\n二行目"), vec!["一行目", "二行目"]);
         assert_eq!(
             split_sentences("やあ！げんき？うん"),
             vec!["やあ！", "げんき？", "うん"]
@@ -328,10 +333,7 @@ mod tests {
     #[test]
     fn skips_whitespace_only_fragments() {
         // 空白のみ (半角/全角) の断片はスキップ、通常のトレーリング改行も落ちる。
-        assert_eq!(
-            split_sentences("A。  \n　\nB。\n"),
-            vec!["A。", "B。"]
-        );
+        assert_eq!(split_sentences("A。  \n　\nB。\n"), vec!["A。", "B。"]);
     }
 
     #[test]

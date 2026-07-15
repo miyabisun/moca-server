@@ -190,7 +190,10 @@ fn truncate_chars(text: &str, max: usize) -> &str {
 /// LLM 応答から JSON 部分 (配列 or オブジェクト) を取り出す。
 pub fn extract_json(text: &str) -> Result<Value, ScriptError> {
     // JSON 構造文字は ASCII なのでバイトオフセットで char 境界問題は起きない。
-    let starts: Vec<usize> = [text.find('['), text.find('{')].into_iter().flatten().collect();
+    let starts: Vec<usize> = [text.find('['), text.find('{')]
+        .into_iter()
+        .flatten()
+        .collect();
     let start = starts.iter().min().copied();
     let end = text.rfind(']').max(text.rfind('}'));
 
@@ -249,8 +252,9 @@ mod tests {
 
     #[test]
     fn drops_unknown_emotion_axes() {
-        let out = validate_script(&json!([{ "text": "a", "emotion": { "happy": 50, "doyaru": 30 } }]))
-            .unwrap();
+        let out =
+            validate_script(&json!([{ "text": "a", "emotion": { "happy": 50, "doyaru": 30 } }]))
+                .unwrap();
         assert_eq!(out[0]["emotion"], json!({ "doyaru": 30 }));
     }
 
@@ -297,7 +301,10 @@ mod tests {
 
     #[test]
     fn smooth_pause_passes_through() {
-        let out = smooth_script(&json!([{ "text": "a", "pause": 300 }, { "text": "b" }]), 1.0 / 3.0);
+        let out = smooth_script(
+            &json!([{ "text": "a", "pause": 300 }, { "text": "b" }]),
+            1.0 / 3.0,
+        );
         assert_eq!(out[0]["pause"], json!(300));
         assert_eq!(out[1].get("pause"), None);
     }

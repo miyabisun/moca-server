@@ -1,7 +1,9 @@
 // /say エンドポイント: テキスト/台本を合成し音声をチャンク配信する。
 // 既定は Ogg/Opus、Accept: audio/wav で可逆 WAV を返す。
 
-use crate::dictionary::{apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry};
+use crate::dictionary::{
+    apply_dictionary, apply_dictionary_to_segments, load_dictionary, DictEntry,
+};
 use crate::error::AppError;
 use crate::script::validate_script;
 use crate::state::AppState;
@@ -111,7 +113,11 @@ fn build_plain_segments(
 
 // 合成タスクを spawn し、mpsc を Body::from_stream に繋いで即レスポンスを返す。
 // audio.wav (可逆 WAV 固定) からも同じ経路を通すため兄弟モジュールへ公開する。
-pub(super) fn stream_response(state: &AppState, segments: Vec<Value>, format: OutputFormat) -> Response {
+pub(super) fn stream_response(
+    state: &AppState,
+    segments: Vec<Value>,
+    format: OutputFormat,
+) -> Response {
     let synth = Arc::clone(&state.synth);
     let cfg = SynthConfig {
         voicepeak_path: state.config.voicepeak_path.clone(),
@@ -329,7 +335,11 @@ mod tests {
     async fn post_text_default_is_ogg_opus() {
         let fake = make_fake(0.0);
         let app = app_with(&fake);
-        let res = app.clone().oneshot(post_text("/say", "こんにちは。")).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(post_text("/say", "こんにちは。"))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers().get(CONTENT_TYPE).unwrap(), "audio/ogg");
         assert_eq!(res.headers().get(CACHE_CONTROL).unwrap(), "no-store");
@@ -342,7 +352,11 @@ mod tests {
     async fn accept_wav_returns_riff() {
         let fake = make_fake(0.0);
         let app = app_with(&fake);
-        let res = app.clone().oneshot(post_text_wav("/say", "こんにちは。")).await.unwrap();
+        let res = app
+            .clone()
+            .oneshot(post_text_wav("/say", "こんにちは。"))
+            .await
+            .unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         assert_eq!(res.headers().get(CONTENT_TYPE).unwrap(), "audio/wav");
         let body = res.into_body().collect().await.unwrap().to_bytes();
@@ -400,7 +414,10 @@ mod tests {
         let app = routes().with_state(state);
         send(&app, post_text("/say", "このGPU")).await;
         let recorded = std::fs::read_to_string(&fake.record).unwrap();
-        assert!(recorded.contains("このジーピーユー"), "recorded: {recorded}");
+        assert!(
+            recorded.contains("このジーピーユー"),
+            "recorded: {recorded}"
+        );
     }
 
     #[tokio::test]
@@ -493,10 +510,9 @@ mod tests {
         let a = app.clone();
         let b = app.clone();
         let start = std::time::Instant::now();
-        let (ra, rb) = tokio::join!(
-            async { send(&a, post_text("/say", "A。")).await },
-            async { send(&b, post_text("/say", "B。")).await },
-        );
+        let (ra, rb) = tokio::join!(async { send(&a, post_text("/say", "A。")).await }, async {
+            send(&b, post_text("/say", "B。")).await
+        },);
         let elapsed = start.elapsed();
         assert_eq!(ra.0, StatusCode::OK);
         assert_eq!(rb.0, StatusCode::OK);

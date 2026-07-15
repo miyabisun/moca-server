@@ -100,7 +100,12 @@ mod tests {
     }
 
     // (status, json body) を返すリクエストヘルパ。
-    async fn req(app: &Router, method: Method, uri: &str, body: Option<Value>) -> (StatusCode, Value) {
+    async fn req(
+        app: &Router,
+        method: Method,
+        uri: &str,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
         let mut builder = Request::builder().method(method).uri(uri);
         let request = if let Some(b) = body {
             builder = builder.header("content-type", "application/json");
@@ -116,13 +121,25 @@ mod tests {
     }
 
     async fn create_project(app: &Router, name: &str) -> Value {
-        let (status, body) = req(app, Method::POST, "/api/projects", Some(json!({ "name": name }))).await;
+        let (status, body) = req(
+            app,
+            Method::POST,
+            "/api/projects",
+            Some(json!({ "name": name })),
+        )
+        .await;
         assert_eq!(status, StatusCode::CREATED);
         body
     }
 
     async fn add_line(app: &Router, project_id: i64, body: Value) -> (StatusCode, Value) {
-        req(app, Method::POST, &format!("/api/projects/{project_id}/lines"), Some(body)).await
+        req(
+            app,
+            Method::POST,
+            &format!("/api/projects/{project_id}/lines"),
+            Some(body),
+        )
+        .await
     }
 
     // --- projects ---
@@ -149,7 +166,13 @@ mod tests {
     #[tokio::test]
     async fn project_name_required() {
         let app = app();
-        let (status, _) = req(&app, Method::POST, "/api/projects", Some(json!({ "name": "   " }))).await;
+        let (status, _) = req(
+            &app,
+            Method::POST,
+            "/api/projects",
+            Some(json!({ "name": "   " })),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -158,8 +181,13 @@ mod tests {
         let app = app();
         let created = create_project(&app, "旧名").await;
         let id = created["id"].as_i64().unwrap();
-        let (status, updated) =
-            req(&app, Method::PATCH, &format!("/api/projects/{id}"), Some(json!({ "name": "新名" }))).await;
+        let (status, updated) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/projects/{id}"),
+            Some(json!({ "name": "新名" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(updated["name"], "新名");
     }
@@ -206,7 +234,12 @@ mod tests {
         assert_eq!(a["script"], Value::Null);
 
         let script = json!([{ "text": "こんにちは。", "emotion": { "honwaka": 60 } }]);
-        let (status, c) = add_line(&app, id, json!({ "mode": "acting", "text": "さん", "script": script })).await;
+        let (status, c) = add_line(
+            &app,
+            id,
+            json!({ "mode": "acting", "text": "さん", "script": script }),
+        )
+        .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(c["mode"], "acting");
         assert_eq!(c["script"], script);
@@ -227,7 +260,12 @@ mod tests {
         let p = create_project(&app, "テスト").await;
         let id = p["id"].as_i64().unwrap();
         let script = json!([{ "text": "やあ。" }]);
-        let (_, row) = add_line(&app, id, json!({ "mode": "announcer", "text": "x", "script": script })).await;
+        let (_, row) = add_line(
+            &app,
+            id,
+            json!({ "mode": "announcer", "text": "x", "script": script }),
+        )
+        .await;
         assert_eq!(row["script"], Value::Null);
     }
 
@@ -238,9 +276,21 @@ mod tests {
         let id = p["id"].as_i64().unwrap();
         let (_, line) = add_line(&app, id, json!({ "mode": "announcer", "text": "x" })).await;
         let lid = line["id"].as_i64().unwrap();
-        let (s1, _) = req(&app, Method::PATCH, &format!("/api/lines/{lid}"), Some(json!({ "script": [] }))).await;
+        let (s1, _) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/lines/{lid}"),
+            Some(json!({ "script": [] })),
+        )
+        .await;
         assert_eq!(s1, StatusCode::BAD_REQUEST);
-        let (s2, _) = req(&app, Method::PATCH, &format!("/api/lines/{lid}"), Some(json!({ "script": [{ "emotion": { "angry": 1 } }] }))).await;
+        let (s2, _) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/lines/{lid}"),
+            Some(json!({ "script": [{ "emotion": { "angry": 1 } }] })),
+        )
+        .await;
         assert_eq!(s2, StatusCode::BAD_REQUEST);
     }
 
@@ -252,7 +302,13 @@ mod tests {
         let (_, line) = add_line(&app, id, json!({ "mode": "announcer", "text": "x" })).await;
         let lid = line["id"].as_i64().unwrap();
         let script = json!([{ "text": "やあ。", "emotion": { "angry": 80 } }]);
-        let (status, updated) = req(&app, Method::PATCH, &format!("/api/lines/{lid}"), Some(json!({ "mode": "acting", "script": script }))).await;
+        let (status, updated) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/lines/{lid}"),
+            Some(json!({ "mode": "acting", "script": script })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(updated["mode"], "acting");
         assert_eq!(updated["script"], script);
@@ -264,9 +320,20 @@ mod tests {
         let p = create_project(&app, "テスト").await;
         let id = p["id"].as_i64().unwrap();
         let script = json!([{ "text": "やあ。" }]);
-        let (_, line) = add_line(&app, id, json!({ "mode": "acting", "text": "x", "script": script })).await;
+        let (_, line) = add_line(
+            &app,
+            id,
+            json!({ "mode": "acting", "text": "x", "script": script }),
+        )
+        .await;
         let lid = line["id"].as_i64().unwrap();
-        let (status, updated) = req(&app, Method::PATCH, &format!("/api/lines/{lid}"), Some(json!({ "script": Value::Null }))).await;
+        let (status, updated) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/lines/{lid}"),
+            Some(json!({ "script": Value::Null })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(updated["script"], Value::Null);
     }
@@ -293,11 +360,27 @@ mod tests {
         let (_, b) = add_line(&app, id, json!({ "mode": "announcer", "text": "B" })).await;
         let (_, c) = add_line(&app, id, json!({ "mode": "announcer", "text": "C" })).await;
         let order = json!({ "order": [c["id"], a["id"], b["id"]] });
-        let (status, reordered) = req(&app, Method::PUT, &format!("/api/projects/{id}/lines/order"), Some(order)).await;
+        let (status, reordered) = req(
+            &app,
+            Method::PUT,
+            &format!("/api/projects/{id}/lines/order"),
+            Some(order),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
-        let texts: Vec<&str> = reordered.as_array().unwrap().iter().map(|r| r["text"].as_str().unwrap()).collect();
+        let texts: Vec<&str> = reordered
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["text"].as_str().unwrap())
+            .collect();
         assert_eq!(texts, vec!["C", "A", "B"]);
-        let positions: Vec<i64> = reordered.as_array().unwrap().iter().map(|r| r["position"].as_i64().unwrap()).collect();
+        let positions: Vec<i64> = reordered
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["position"].as_i64().unwrap())
+            .collect();
         assert_eq!(positions, vec![0, 1, 2]);
     }
 
@@ -308,7 +391,13 @@ mod tests {
         let id = p["id"].as_i64().unwrap();
         let (_, a) = add_line(&app, id, json!({ "mode": "announcer", "text": "A" })).await;
         let order = json!({ "order": [a["id"], 99999] });
-        let (status, _) = req(&app, Method::PUT, &format!("/api/projects/{id}/lines/order"), Some(order)).await;
+        let (status, _) = req(
+            &app,
+            Method::PUT,
+            &format!("/api/projects/{id}/lines/order"),
+            Some(order),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -317,7 +406,13 @@ mod tests {
         let app = app();
         let p = create_project(&app, "テスト").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, _) = req(&app, Method::PUT, &format!("/api/projects/{id}/lines/order"), Some(json!({ "order": "nope" }))).await;
+        let (status, _) = req(
+            &app,
+            Method::PUT,
+            &format!("/api/projects/{id}/lines/order"),
+            Some(json!({ "order": "nope" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
@@ -327,10 +422,21 @@ mod tests {
         let p = create_project(&app, "テスト").await;
         let id = p["id"].as_i64().unwrap();
         let script = json!([{ "text": "やあ。", "emotion": { "angry": 80 } }]);
-        let (_, a) = add_line(&app, id, json!({ "mode": "acting", "text": "A", "script": script })).await;
+        let (_, a) = add_line(
+            &app,
+            id,
+            json!({ "mode": "acting", "text": "A", "script": script }),
+        )
+        .await;
         add_line(&app, id, json!({ "mode": "announcer", "text": "B" })).await;
         let lid = a["id"].as_i64().unwrap();
-        let (status, dup) = req(&app, Method::POST, &format!("/api/lines/{lid}/duplicate"), None).await;
+        let (status, dup) = req(
+            &app,
+            Method::POST,
+            &format!("/api/lines/{lid}/duplicate"),
+            None,
+        )
+        .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(dup["text"], "A");
         assert_eq!(dup["mode"], "acting");
@@ -338,9 +444,19 @@ mod tests {
         assert_eq!(dup["position"], 1);
 
         let (_, single) = req(&app, Method::GET, &format!("/api/projects/{id}"), None).await;
-        let texts: Vec<&str> = single["lines"].as_array().unwrap().iter().map(|l| l["text"].as_str().unwrap()).collect();
+        let texts: Vec<&str> = single["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["text"].as_str().unwrap())
+            .collect();
         assert_eq!(texts, vec!["A", "A", "B"]);
-        let positions: Vec<i64> = single["lines"].as_array().unwrap().iter().map(|l| l["position"].as_i64().unwrap()).collect();
+        let positions: Vec<i64> = single["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["position"].as_i64().unwrap())
+            .collect();
         assert_eq!(positions, vec![0, 1, 2]);
     }
 
@@ -358,13 +474,33 @@ mod tests {
         let app = app();
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, body) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "一行目\n\n  \n二行目\n三行目" }))).await;
+        let (status, body) = req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "一行目\n\n  \n二行目\n三行目" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["mode"], "announcer");
-        let texts: Vec<&str> = body["created"].as_array().unwrap().iter().map(|l| l["text"].as_str().unwrap()).collect();
+        let texts: Vec<&str> = body["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["text"].as_str().unwrap())
+            .collect();
         assert_eq!(texts, vec!["一行目", "二行目", "三行目"]);
-        assert!(body["created"].as_array().unwrap().iter().all(|l| l["script"] == Value::Null));
-        let positions: Vec<i64> = body["created"].as_array().unwrap().iter().map(|l| l["position"].as_i64().unwrap()).collect();
+        assert!(body["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["script"] == Value::Null));
+        let positions: Vec<i64> = body["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["position"].as_i64().unwrap())
+            .collect();
         assert_eq!(positions, vec![0, 1, 2]);
     }
 
@@ -373,16 +509,43 @@ mod tests {
         let app = app();
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (_, base) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "A\nB\nC" }))).await;
+        let (_, base) = req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "A\nB\nC" })),
+        )
+        .await;
         let after_id = base["created"][0]["id"].clone();
-        let (_, inserted) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "X\nY", "after": after_id }))).await;
-        let positions: Vec<i64> = inserted["created"].as_array().unwrap().iter().map(|l| l["position"].as_i64().unwrap()).collect();
+        let (_, inserted) = req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "X\nY", "after": after_id })),
+        )
+        .await;
+        let positions: Vec<i64> = inserted["created"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["position"].as_i64().unwrap())
+            .collect();
         assert_eq!(positions, vec![1, 2]);
 
         let (_, single) = req(&app, Method::GET, &format!("/api/projects/{id}"), None).await;
-        let texts: Vec<&str> = single["lines"].as_array().unwrap().iter().map(|l| l["text"].as_str().unwrap()).collect();
+        let texts: Vec<&str> = single["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["text"].as_str().unwrap())
+            .collect();
         assert_eq!(texts, vec!["A", "X", "Y", "B", "C"]);
-        let positions: Vec<i64> = single["lines"].as_array().unwrap().iter().map(|l| l["position"].as_i64().unwrap()).collect();
+        let positions: Vec<i64> = single["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["position"].as_i64().unwrap())
+            .collect();
         assert_eq!(positions, vec![0, 1, 2, 3, 4]);
     }
 
@@ -391,8 +554,20 @@ mod tests {
         let app = app();
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "A\nB" }))).await;
-        let (_, inserted) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "Z", "after": 99999 }))).await;
+        req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "A\nB" })),
+        )
+        .await;
+        let (_, inserted) = req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "Z", "after": 99999 })),
+        )
+        .await;
         assert_eq!(inserted["created"][0]["position"], 2);
     }
 
@@ -406,7 +581,9 @@ mod tests {
             .method(Method::POST)
             .uri(format!("/api/projects/{id}/import"))
             .header("content-type", "application/json")
-            .body(Body::from(json!({ "mode": "acting", "text": "文一\n文二" }).to_string()))
+            .body(Body::from(
+                json!({ "mode": "acting", "text": "文一\n文二" }).to_string(),
+            ))
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
@@ -417,22 +594,28 @@ mod tests {
             .to_str()
             .unwrap()
             .contains("text/event-stream"));
-        let body = String::from_utf8(
-            res.into_body().collect().await.unwrap().to_bytes().to_vec(),
-        )
-        .unwrap();
+        let body = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec())
+            .unwrap();
         assert!(body.contains("\"status\":\"failed\""), "body: {body}");
 
         // 失敗行も announcer として保存され、元テキストが残る。
         let (_, single) = req_get(&app, id).await;
         let lines = single["lines"].as_array().unwrap();
         assert_eq!(lines.len(), 2);
-        assert!(lines.iter().all(|l| l["mode"] == "announcer" && l["script"] == Value::Null));
+        assert!(lines
+            .iter()
+            .all(|l| l["mode"] == "announcer" && l["script"] == Value::Null));
         assert_eq!(lines[0]["text"], "文一");
     }
 
     async fn req_get(app: &Router, project_id: i64) -> (StatusCode, Value) {
-        req(app, Method::GET, &format!("/api/projects/{project_id}"), None).await
+        req(
+            app,
+            Method::GET,
+            &format!("/api/projects/{project_id}"),
+            None,
+        )
+        .await
     }
 
     #[tokio::test]
@@ -440,7 +623,13 @@ mod tests {
         let app = app();
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, body) = req(&app, Method::POST, &format!("/api/projects/{id}/import"), Some(json!({ "mode": "announcer", "text": "  \n\n" }))).await;
+        let (status, body) = req(
+            &app,
+            Method::POST,
+            &format!("/api/projects/{id}/import"),
+            Some(json!({ "mode": "announcer", "text": "  \n\n" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({ "mode": "announcer", "created": [] }));
     }
@@ -450,27 +639,68 @@ mod tests {
     #[tokio::test]
     async fn dictionary_list_sorted_by_surface() {
         let app = app();
-        req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "GPU", "reading": "ジーピーユー" }))).await;
-        req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "API", "reading": "エーピーアイ" }))).await;
+        req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "GPU", "reading": "ジーピーユー" })),
+        )
+        .await;
+        req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "API", "reading": "エーピーアイ" })),
+        )
+        .await;
         let (_, rows) = req(&app, Method::GET, "/api/dictionary", None).await;
-        let surfaces: Vec<&str> = rows.as_array().unwrap().iter().map(|r| r["surface"].as_str().unwrap()).collect();
+        let surfaces: Vec<&str> = rows
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["surface"].as_str().unwrap())
+            .collect();
         assert_eq!(surfaces, vec!["API", "GPU"]);
     }
 
     #[tokio::test]
     async fn dictionary_empty_surface_reading_400() {
         let app = app();
-        let (s1, _) = req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "  ", "reading": "よみ" }))).await;
+        let (s1, _) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "  ", "reading": "よみ" })),
+        )
+        .await;
         assert_eq!(s1, StatusCode::BAD_REQUEST);
-        let (s2, _) = req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "表記", "reading": "" }))).await;
+        let (s2, _) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "表記", "reading": "" })),
+        )
+        .await;
         assert_eq!(s2, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn dictionary_upsert_overwrites() {
         let app = app();
-        let (_, first) = req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "ハード", "reading": "はーど" }))).await;
-        let (status, second) = req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "ハード", "reading": "かたい" }))).await;
+        let (_, first) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "ハード", "reading": "はーど" })),
+        )
+        .await;
+        let (status, second) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "ハード", "reading": "かたい" })),
+        )
+        .await;
         assert_eq!(status, StatusCode::CREATED);
         assert_eq!(second["id"], first["id"]);
         let (_, rows) = req(&app, Method::GET, "/api/dictionary", None).await;
@@ -481,11 +711,29 @@ mod tests {
     #[tokio::test]
     async fn dictionary_delete_and_404() {
         let app = app();
-        let (_, row) = req(&app, Method::POST, "/api/dictionary", Some(json!({ "surface": "x", "reading": "エックス" }))).await;
+        let (_, row) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "x", "reading": "エックス" })),
+        )
+        .await;
         let did = row["id"].as_i64().unwrap();
-        let (s1, _) = req(&app, Method::DELETE, &format!("/api/dictionary/{did}"), None).await;
+        let (s1, _) = req(
+            &app,
+            Method::DELETE,
+            &format!("/api/dictionary/{did}"),
+            None,
+        )
+        .await;
         assert_eq!(s1, StatusCode::OK);
-        let (s2, _) = req(&app, Method::DELETE, &format!("/api/dictionary/{did}"), None).await;
+        let (s2, _) = req(
+            &app,
+            Method::DELETE,
+            &format!("/api/dictionary/{did}"),
+            None,
+        )
+        .await;
         assert_eq!(s2, StatusCode::NOT_FOUND);
     }
 
@@ -575,12 +823,22 @@ mod tests {
         // 2 つ購読 (ハンドラ内で subscribe 済みの状態でレスポンスが返る)。
         let sub1 = app
             .clone()
-            .oneshot(Request::builder().uri("/notify/stream").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/notify/stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         let sub2 = app
             .clone()
-            .oneshot(Request::builder().uri("/notify/stream").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/notify/stream")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert!(sub1
@@ -621,16 +879,20 @@ mod tests {
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
-        let text = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec()).unwrap();
+        let text = String::from_utf8(res.into_body().collect().await.unwrap().to_bytes().to_vec())
+            .unwrap();
         (status, text)
     }
 
     #[tokio::test]
     async fn import_acting_streams_progress_and_saves_acting() {
-        let app = app_with_analyzer(cli_analyzer("cat >/dev/null; echo '[{\"text\":\"こんにちは。\",\"emotion\":{\"honwaka\":60}}]'"));
+        let app = app_with_analyzer(cli_analyzer(
+            "cat >/dev/null; echo '[{\"text\":\"こんにちは。\",\"emotion\":{\"honwaka\":60}}]'",
+        ));
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, body) = import_body(&app, id, json!({ "mode": "acting", "text": "文一\n文二" })).await;
+        let (status, body) =
+            import_body(&app, id, json!({ "mode": "acting", "text": "文一\n文二" })).await;
         assert_eq!(status, StatusCode::OK);
 
         // 2 件の done 進捗 + complete。
@@ -642,7 +904,9 @@ mod tests {
         let (_, single) = req_get(&app, id).await;
         let lines = single["lines"].as_array().unwrap();
         assert_eq!(lines.len(), 2);
-        assert!(lines.iter().all(|l| l["mode"] == "acting" && l["script"] != Value::Null));
+        assert!(lines
+            .iter()
+            .all(|l| l["mode"] == "acting" && l["script"] != Value::Null));
     }
 
     #[tokio::test]
@@ -651,7 +915,8 @@ mod tests {
         let app = app_with_analyzer(cli_analyzer("cat >/dev/null; echo ごめんなさい"));
         let p = create_project(&app, "import").await;
         let id = p["id"].as_i64().unwrap();
-        let (status, body) = import_body(&app, id, json!({ "mode": "acting", "text": "失敗する文" })).await;
+        let (status, body) =
+            import_body(&app, id, json!({ "mode": "acting", "text": "失敗する文" })).await;
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("\"status\":\"failed\""), "body: {body}");
 
