@@ -5,6 +5,7 @@ mod lines;
 mod notify;
 mod projects;
 mod say;
+mod work;
 
 use crate::error::AppError;
 use crate::spa;
@@ -44,7 +45,12 @@ pub fn build_router(state: AppState) -> Router {
         .merge(audio::routes())
         .merge(analyze::routes())
         .merge(notify::routes())
+        .merge(work::routes())
         .nest_service("/assets", ServeDir::new("client/build/assets"))
+        // 作業タブの立ち絵素材 (再配布禁止のため非同梱、起動時に自動 DL — src/assets.rs)。
+        // ディレクトリが未取得・DL 失敗でも ServeDir が 404 を返すだけで、SPA
+        // フォールバックには流れない (index.html を 200 で返さない)。
+        .nest_service("/moca-assets", ServeDir::new(&state.config.assets_dir))
         .fallback_service(get(spa_fallback))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -90,9 +96,13 @@ mod tests {
                 narrator: "Miyamai Moca".into(),
                 bep_dict_path: "./bep-eng.dic".into(),
                 bep_dict_url: String::new(),
+                work_talk_timeout_secs: 60,
+                assets_dir: "./target/test-missing-assets".into(),
+                moca_illust_url: String::new(),
             },
             synth: Arc::new(crate::synth::SynthQueue::new()),
             analyzer: Arc::new(analyzer),
+            news_analyzer: None,
             fallback: Arc::new(crate::fallback::FallbackDict::empty()),
             notify,
         };
@@ -926,5 +936,59 @@ mod tests {
         assert_eq!(lines[0]["mode"], "announcer");
         assert_eq!(lines[0]["text"], "失敗する文");
         assert_eq!(lines[0]["script"], Value::Null);
+    }
+
+    // --- /work/talk (作業タブの LLM 声かけ) ---
+
+    #[tokio::test]
+    async fn work_talk_generates_script_via_cli_backend() {
+        let app = app_with_analyzer(cli_analyzer(
+            "cat >/dev/null; echo '[{\"text\":\"がんばりましょう\"}]'",
+        ));
+        let (status, body) = req(
+            &app,
+            Method::POST,
+            "/work/talk",
+            Some(json!({ "kind": "milestone", "context": { "phase": "work", "setIndex": 1, "sets": 4 } })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body[0]["text"], "がんばりましょう");
+    }
+
+    #[tokio::test]
+    async fn work_talk_disabled_backend_is_502() {
+        let app = app(); // Backend::None
+        let (status, _) = req(
+            &app,
+            Method::POST,
+            "/work/talk",
+            Some(json!({ "kind": "chatter" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn work_talk_unknown_kind_is_rejected() {
+        let app = app();
+        let (status, _) = req(
+            &app,
+            Method::POST,
+            "/work/talk",
+            Some(json!({ "kind": "dance" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    #[tokio::test]
+    async fn moca_assets_without_dir_is_404_not_spa() {
+        let app = app(); // assets_dir はテスト用の存在しないディレクトリ
+        for path in ["/moca-assets/moca_illust/001.png", "/moca-assets", "/moca-assets/"] {
+            let (status, body) = req(&app, Method::GET, path, None).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "path: {path}");
+            assert_eq!(body, Value::Null); // index.html にフォールバックしない
+        }
     }
 }

@@ -81,6 +81,13 @@ export async function analyzeLine(text) {
 	return res.json();
 }
 
+// --- Work tab: LLM 声かけ生成。返り値は /say にそのまま POST できる script JSON ---
+export async function workTalk(kind, context, signal) {
+	const res = await fetch('/work/talk', { ...json('POST', { kind, context }), signal });
+	if (!res.ok) throw new Error(await res.text().catch(() => `${res.status}`));
+	return res.json();
+}
+
 // --- Playback source URLs (audio is synthesized on demand by /say) ---
 // `raw` skips the reading dictionary (used by the 辞書 preview, which speaks a
 // reading string verbatim so it isn't substituted again).

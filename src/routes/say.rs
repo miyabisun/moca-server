@@ -245,9 +245,13 @@ mod tests {
                 narrator: "Test".into(),
                 bep_dict_path: "./bep-eng.dic".into(),
                 bep_dict_url: String::new(),
+                work_talk_timeout_secs: 60,
+                assets_dir: "./target/test-missing-assets".into(),
+                moca_illust_url: String::new(),
             },
             synth: Arc::new(SynthQueue::new()),
             analyzer: Arc::new(crate::analyze::Backend::None),
+            news_analyzer: None,
             fallback: Arc::new(crate::fallback::FallbackDict::empty()),
             notify,
         }

@@ -342,6 +342,46 @@ Domain components on top of the Sumi recipes:
   no queue cap is enforced (fire-and-forget delivery in the server
   guarantees the queue only holds arrivals-since-subscribe).
 
+- **Work tab (作業 — pomodoro work-companion):** a third top-level tab
+  that turns the app into a Chill-with-You-style 作業通話 window: a
+  pomodoro timer plus モカ's voice and portrait keeping the user
+  company. It is *scenery, not workspace* — the vim shortcut system
+  stays 台本-only (the global keydown guard bails on this tab) and no
+  Sumi list/card recipes appear here.
+  - **Layers (back to front):** WorkScene (window scenery), WorkPortrait
+    (official standing art), timer panel on a translucent glass slot
+    (`--c-bg` at ~72% + blur) so it stays readable over the scenery.
+  - **Scenery palette is scene art, not chrome:** the sky gradients
+    (dawn 5–8 / day 8–16 / dusk 16–19 / night otherwise), window-frame
+    wood, lamp glow and drifting motes use fixed literal colors and are
+    identical in Sumi and Kinari. Sky bands cross-fade by opacity (3s);
+    town lights and the moon appear at night only. All ambient motion
+    (motes, portrait breathing, blink, lip-flap) stops under
+    `prefers-reduced-motion: reduce`.
+  - **Timer ring** is always accent — `secondary` stays reserved for
+    persistent alive states, which here is only the 声かけ ON toggle
+    (same family as the notify megaphone). Phase is conveyed by the
+    label (待機/作業中/休憩中), not by recoloring the ring.
+  - **Portrait:** the official 232-PNG diff set (18 eye-sets × 13
+    mouths; two sets ship with 12, so the manifest is an explicit
+    table, not arithmetic — served from `MOCA_ASSETS_DIR` via
+    `/moca-assets`, never committed). Blink = 120ms swap to the blink pair every 3–8s
+    (suppressed while speaking); lip-flap = ~110ms random vowel cycling
+    while the voice audio plays; expression follows the phase (work =
+    normal, break = smile) and, while speaking, the line's emotion
+    summary. Missing assets degrade gracefully: the layer disappears
+    and the tab remains a timer over scenery.
+  - **Voice (声かけ):** a private audio path (FIFO, script-JSON POST
+    /say) independent from the line-player, like notifications. It
+    speaks at milestones (start / break start / break end / all done,
+    plus one line after a sleep-resync; manual pause→resume is silent),
+    occasionally
+    mid-work (チャッター, 5–15min, skipped while the line-player is
+    sounding), and mixes in LLM-generated lines (~25%, `/work/talk`)
+    with a 20s client fallback to the fixed line set. Timer and voice
+    state live in module scope so leaving the tab never stops the
+    pomodoro.
+
 ## Do's and Don'ts
 
 - Do keep emotion colors monosemous: one axis, one hue, slider + chip

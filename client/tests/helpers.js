@@ -92,9 +92,11 @@ const jsonBody = (data) => ({
 // `analyzeResult` is the fixed script array returned by /analyze.
 // `sayAudio` (optional Buffer): when set, /say returns it as audio/wav instead of
 // the default empty audio/mpeg body — needed by the play/stop test (see silentWav).
+// `workTalkResult` (optional script array): when set, POST /work/talk returns it;
+// otherwise the route answers 502 so tests exercise the fixed-line fallback path.
 export async function installApi(
 	page,
-	{ projects = [], analyzeResult = [{ happy: 0 }], sayAudio = null } = {}
+	{ projects = [], analyzeResult = [{ happy: 0 }], sayAudio = null, workTalkResult = null } = {}
 ) {
 	const store = { projects };
 	const requests = [];
@@ -107,7 +109,7 @@ export async function installApi(
 		return null;
 	};
 
-	await page.route(/\/(api|analyze|say|notify)\b/, async (route) => {
+	await page.route(/\/(api|analyze|say|notify|work)\b/, async (route) => {
 		const req = route.request();
 		const method = req.method();
 		const path = new URL(req.url()).pathname;
@@ -139,6 +141,12 @@ export async function installApi(
 		// --- /analyze: return the fixed script array. ---
 		if (path === '/analyze') {
 			return route.fulfill(jsonBody(analyzeResult));
+		}
+
+		// --- /work/talk: LLM 声かけ。既定は 502 で固定セリフフォールバックを踏ませる。 ---
+		if (path === '/work/talk') {
+			if (workTalkResult) return route.fulfill(jsonBody(workTalkResult));
+			return route.fulfill({ status: 502, contentType: 'text/plain', body: 'no backend' });
 		}
 
 		// --- Projects list ---

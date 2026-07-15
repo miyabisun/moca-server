@@ -21,7 +21,9 @@ export default defineConfig({
 			'/api': 'http://localhost:3000',
 			'/say': 'http://localhost:3000',
 			'/analyze': 'http://localhost:3000',
-			'/notify': 'http://localhost:3000'
+			'/notify': 'http://localhost:3000',
+			'/work': 'http://localhost:3000',
+			'/moca-assets': 'http://localhost:3000'
 		}
 	}
 });

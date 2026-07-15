@@ -8,6 +8,7 @@
 	import NewLineModal from '$lib/components/NewLineModal.svelte';
 	import HelpModal from '$lib/components/HelpModal.svelte';
 	import DictionaryView from '$lib/components/DictionaryView.svelte';
+	import WorkView from '$lib/components/WorkView.svelte';
 	import NotifySubscribe from '$lib/components/NotifySubscribe.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import * as api from '$lib/api.js';
@@ -17,7 +18,9 @@
 	let projects = $state(null);
 	let selectedId = $state(null);
 	let selected = $state(null); // full project detail with lines
-	// Which top-level view is active. 台本 = two-pane workspace, 辞書 = dictionary.
+	// Which top-level view is active. 台本 = two-pane workspace, 辞書 = dictionary,
+	// 作業 = pomodoro work-companion. Global vim shortcuts stay 台本-only
+	// (onWindowKeydown bails on the other tabs).
 	let activeTab = $state('script');
 	// Pour-in modal state. `afterLineId` inserts after that line; null = append end.
 	let pourIn = $state(false);
@@ -590,6 +593,9 @@
 			<button type="button" class:active={activeTab === 'dict'} onclick={() => (activeTab = 'dict')}>
 				辞書
 			</button>
+			<button type="button" class:active={activeTab === 'work'} onclick={() => (activeTab = 'work')}>
+				作業
+			</button>
 		</nav>
 		<NotifySubscribe bind:this={notify} />
 	</header>
@@ -632,9 +638,13 @@
 				{/if}
 			</main>
 		</div>
-	{:else}
+	{:else if activeTab === 'dict'}
 		<main class="dict-view">
 			<DictionaryView />
+		</main>
+	{:else}
+		<main class="work-view">
+			<WorkView />
 		</main>
 	{/if}
 </div>
@@ -773,7 +783,8 @@
 	min-height: 0
 	overflow: hidden
 
-.dict-view
+.dict-view,
+.work-view
 	min-height: 0
 	overflow: hidden
 

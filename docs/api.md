@@ -10,6 +10,8 @@
 | `GET /api/projects/:id/lines/:lineId/audio.wav` | 保存済みの行を合成して WAV で返す (動画素材は可逆が正なので Accept 不問で常に WAV)。acting かつ script があれば台本経路、それ以外は text 文分割経路 |
 | `POST /notify` (text/plain) | 本文を購読中の SPA に broadcast する。空文字は 400、それ以外は 204。永続化・再送なし (誰も購読していなければ捨てる) |
 | `GET /notify/stream` | text/event-stream。通知購読の SSE ストリーム (管理画面ヘッダーのメガホン ON で接続) |
+| `POST /work/talk` (application/json) | 作業タブの LLM 声かけ。`{"kind":"milestone"\|"chatter"\|"news","context":{"phase","setIndex","sets","hour"}}` (context は全て省略可、`phase` は `idle`/`work`/`break` のみ) を受け、台本JSONを返す。`news` は `WORK_NEWS_CMD` の backend を優先。backend 無効/失敗/タイムアウト (`WORK_TALK_TIMEOUT_SECS`) は 502 — 固定セリフへのフォールバックはクライアントの責務。未知の `kind` は 422 |
+| `GET /moca-assets/*` | 作業タブの立ち絵素材 (`MOCA_ASSETS_DIR` を配信。無ければ起動時に自動 DL)。未取得の間は 404 (docs/config.md 参照) |
 
 合成はサーバー全体で直列化される（VOICEPEAK CLI は同時 1 プロセスに制限されており、2 個目の起動は拒否されるため）。
 
