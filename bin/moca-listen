@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# moca-listen — /notify/stream を常時購読し、届いた通知を宮舞モカで読み上げる。
+#
+# ffplay があれば低帯域の Ogg/Opus をストリーミング再生する。なければ WAV を
+# ダウンロードし、OS 側のプレイヤー (afplay / SoundPlayer / pw-play 等) で再生する。
+# 接続が切れた場合は MOCA_RETRY_DELAY 秒後に自動再接続する。
+set -uo pipefail
+
+URL="${MOCA_URL:-http://localhost:3000}"
+RETRY_DELAY="${MOCA_RETRY_DELAY:-2}"
+PLAYER="${MOCA_PLAYER:-}"
+
+is_wsl() {
+  case "$(uname -r 2>/dev/null)" in
+    *[Mm]icrosoft*|*WSL*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+select_player() {
+  if [ -n "$PLAYER" ]; then
+    case "$PLAYER" in
+      ffplay|afplay|pw-play|paplay|aplay) command -v "$PLAYER" >/dev/null 2>&1 || PLAYER="" ;;
+      windows-soundplayer)
+        command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1 || PLAYER=""
+        ;;
+      *) PLAYER="" ;;
+    esac
+    if [ -z "$PLAYER" ]; then
+      echo "moca-listen: MOCA_PLAYER で指定されたプレイヤーを利用できません。ffmpeg (ffplay) をインストールするか指定を解除してください。" >&2
+      exit 1
+    fi
+    return
+  fi
+
+  if command -v ffplay >/dev/null 2>&1; then
+    PLAYER=ffplay
+    return
+  fi
+
+  case "$(uname -s 2>/dev/null)" in
+    Darwin)
+      command -v afplay >/dev/null 2>&1 && PLAYER=afplay
+      ;;
+    Linux)
+      if is_wsl && command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+        PLAYER=windows-soundplayer
+      elif command -v pw-play >/dev/null 2>&1; then
+        PLAYER=pw-play
+      elif command -v paplay >/dev/null 2>&1; then
+        PLAYER=paplay
+      elif command -v aplay >/dev/null 2>&1; then
+        PLAYER=aplay
+      fi
+      ;;
+  esac
+
+  if [ -z "$PLAYER" ]; then
+    echo "moca-listen: 音声プレイヤーが見つかりません。ffmpeg (ffplay) をインストールしてください。" >&2
+    echo "  macOS: brew install ffmpeg" >&2
+    echo "  Debian/Ubuntu/WSL: sudo apt install ffmpeg" >&2
+    exit 1
+  fi
+}
+
+# /say の WAV はストリーミング用にサイズが 0xffffffff になっている。
+# ファイル再生するネイティブプレイヤー向けに RIFF と data の実サイズを埋め直す。
+write_u32_le() {
+  local file="$1" offset="$2" value="$3" shift byte
+  {
+    for shift in 0 8 16 24; do
+      byte=$(( (value >> shift) & 255 ))
+      printf '%b' "\\$(printf '%03o' "$byte")"
+    done
+  } | dd of="$file" bs=1 seek="$offset" count=4 conv=notrunc 2>/dev/null
+}
+
+finalize_wav() {
+  local file="$1" size
+  size=$(wc -c < "$file")
+  size=${size//[[:space:]]/}
+  if [ "$size" -lt 44 ]; then
+    echo "moca-listen: /say から不正な WAV を受信しました" >&2
+    return 1
+  fi
+  write_u32_le "$file" 4 $((size - 8))
+  write_u32_le "$file" 40 $((size - 44))
+}
+
+play_native() {
+  local text="$1" wav windows_path powershell_path
+  wav=$(mktemp "${TMPDIR:-/tmp}/moca-listen.XXXXXX") || return 1
+  trap 'rm -f "$wav"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  if ! printf '%s' "$text" \
+    | curl -fsS -H 'content-type: text/plain' -H 'accept: audio/wav' --data-binary @- -o "$wav" "$URL/say"; then
+    echo "moca-listen: 音声の取得に失敗しました" >&2
+    rm -f "$wav"
+    trap - EXIT HUP INT TERM
+    return 1
+  fi
+  if ! finalize_wav "$wav"; then
+    rm -f "$wav"
+    trap - EXIT HUP INT TERM
+    return 1
+  fi
+
+  case "$PLAYER" in
+    afplay) afplay "$wav" ;;
+    pw-play) pw-play "$wav" ;;
+    paplay) paplay "$wav" ;;
+    aplay) aplay -q "$wav" ;;
+    windows-soundplayer)
+      if ! windows_path=$(wslpath -w "$wav"); then
+        rm -f "$wav"
+        trap - EXIT HUP INT TERM
+        return 1
+      fi
+      powershell_path=${windows_path//\'/\'\'}
+      powershell.exe -NoProfile -NonInteractive -Command \
+        "\$sound = New-Object System.Media.SoundPlayer '$powershell_path'; \$sound.PlaySync()"
+      ;;
+  esac
+  local status=$?
+  rm -f "$wav"
+  trap - EXIT HUP INT TERM
+  return "$status"
+}
+
+play_notification() {
+  local text="$1"
+  if [ "$PLAYER" = ffplay ]; then
+    printf '%s' "$text" \
+      | curl -fsS -H 'content-type: text/plain' -H 'accept: audio/ogg' --data-binary @- "$URL/say" \
+      | ffplay -hide_banner -loglevel error -nodisp -autoexit -
+  else
+    play_native "$text"
+  fi
+}
+
+consume_stream() {
+  local line data="" value
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    case "$line" in
+      data:*)
+        value=${line#data:}
+        value=${value# }
+        if [ -n "$data" ]; then
+          data+=$'\n'
+        fi
+        data+="$value"
+        ;;
+      '')
+        if [ -n "$data" ]; then
+          if ! play_notification "$data"; then
+            echo "moca-listen: 通知の再生に失敗しました" >&2
+          fi
+          data=""
+        fi
+        ;;
+    esac
+  done
+}
+
+listen_once() {
+  curl -fsSN -H 'accept: text/event-stream' "$URL/notify/stream" | consume_stream
+}
+
+main() {
+  select_player
+  echo "moca-listen: $URL に接続します ($PLAYER)" >&2
+
+  while true; do
+    if listen_once; then
+      echo "moca-listen: 接続が終了しました。${RETRY_DELAY}秒後に再接続します" >&2
+    else
+      echo "moca-listen: 接続できません。${RETRY_DELAY}秒後に再接続します" >&2
+    fi
+    sleep "$RETRY_DELAY"
+  done
+}
+
+if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
+  main
+fi

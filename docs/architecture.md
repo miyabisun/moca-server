@@ -22,6 +22,7 @@
 - `client/` — 管理画面 SPA (Svelte + Vite。`client/` 内で Bun でビルドし `client/build` へ出力)
 - `bin/moca` — CLI クライアント (bash / curl / ffplay があれば動く)
 - `bin/moca-notify` — 通知テキストを `POST /notify` に投げる薄いラッパー (bash / curl)
+- `bin/moca-listen` — 通知 SSE の常駐購読・自動再接続・OS別音声再生 (bash / curl)
 
 ## 設計上の判断と経緯
 

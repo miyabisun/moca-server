@@ -1,4 +1,4 @@
-# CLI クライアント (`bin/moca` / `bin/moca-notify`)
+# CLI クライアント (`bin/moca` / `bin/moca-notify` / `bin/moca-listen`)
 
 ## インストール
 
@@ -65,3 +65,28 @@ set-hook -g alert-bell 'run-shell "moca-notify \"#{session_name} が待ってま
 
 dotfiles 側の hook 実装本体は moca-server のスコープ外 (サーバーは「テキストを受けて
 購読中の SPA に音声で届ける」だけを担当する)。
+
+## 通知の常駐購読 (`bin/moca-listen`)
+
+`moca-listen` は `/notify/stream` に接続し、届いた通知をCLI側で読み上げる。
+ブラウザのバックグラウンドタブ制限を受けず、切断時は自動的に再接続する。
+
+```sh
+curl -o ~/bin/moca-listen https://raw.githubusercontent.com/miyabisun/moca-server/main/bin/moca-listen
+chmod +x ~/bin/moca-listen
+export MOCA_URL=http://<server-host>:3000
+moca-listen
+```
+
+再生方法は起動時に自動選択する。`ffplay` があれば Ogg/Opus をストリーミング再生し、
+なければ WAV と次のOS標準系プレイヤーを使う。
+
+- macOS: `afplay`
+- WSL: Windows PowerShell の `System.Media.SoundPlayer`
+- Linux: `pw-play`, `paplay`, `aplay` の順
+
+どのプレイヤーも見つからない場合は、ffmpegの導入方法を表示して終了する。再接続間隔は
+`MOCA_RETRY_DELAY` で変更できる (既定: 2秒)。通知はサーバー側で永続化されないため、
+切断から再接続までに送られた通知は再生されない。自動選択を上書きする場合は
+`MOCA_PLAYER` に `ffplay`, `afplay`, `pw-play`, `paplay`, `aplay`,
+`windows-soundplayer` のいずれかを指定できる。
