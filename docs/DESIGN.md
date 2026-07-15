@@ -372,8 +372,12 @@ Domain components on top of the Sumi recipes:
     casual タメ口, zero romantic tension. Emotion params stay subtle:
     `honwaka` never exceeds 20 (higher reads as a put-on phone voice);
     calm is expressed with `speed` ≈ 90, not warmth axes. Chatter is
-    overheard muttering (「ええと……」「よし、動いた!」) plus
-    deliberately trivial small talk.
+    overheard muttering (「ええと……」「よし、動いた!」, base
+    `bosoboso` ≈ 55) plus deliberately trivial small talk, played at
+    reduced volume (~0.45 — a friend muttering, not addressing you)
+    every 1–1.5 minutes (ひかえめ: 5–10min). The idle expression drifts every 20–50s
+    (frowns, half-lidded eyes, closed eyes, the occasional slacking
+    face) so she never sits frozen in a neutral stare.
   - **Timer ring** is always accent — `secondary` stays reserved for
     persistent alive states, which here is only the 声かけ ON toggle
     (same family as the notify megaphone). Phase is conveyed by the
@@ -390,11 +394,14 @@ Domain components on top of the Sumi recipes:
     summary. Missing assets degrade gracefully: the layer disappears
     and the tab remains a timer over scenery.
   - **Voice (声かけ):** a private audio path (FIFO, script-JSON POST
-    /say) independent from the line-player, like notifications. It
-    speaks at milestones (start / break start / break end / all done,
-    plus one line after a sleep-resync; manual pause→resume is silent),
+    /say) independent from the line-player, like notifications. There
+    is no set count: after each break the timer stops and モカ asks
+    what to do next (time-of-day aware — lunch / dinner / "it's late,
+    stop?"), and continuing is always the user's click. It speaks at
+    milestones (start / break start / the ask / session end, plus one
+    line after a sleep-resync; manual pause→resume is silent),
     occasionally
-    mid-work (チャッター, 5–15min, skipped while the line-player is
+    mid-work (チャッター, 1–1.5min, skipped while the line-player is
     sounding), and mixes in LLM-generated lines (~25%, `/work/talk`)
     with a 20s client fallback to the fixed line set. Timer and voice
     state live in module scope so leaving the tab never stops the

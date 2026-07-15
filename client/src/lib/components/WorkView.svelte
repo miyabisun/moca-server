@@ -30,20 +30,21 @@
 	min-height: 0
 	overflow: hidden
 
-// カメラの被写体。デスクに座るモカのバストアップを中央やや右、下端に接地
+// カメラの被写体。モカのバストアップ (リボン下端まで) を中央やや右、下端に接地。
+// カメラに寄っている想定なので大きめに写す
 .portrait-slot
 	position: absolute
 	bottom: 0
-	left: 55%
+	left: 54%
 	transform: translateX(-50%)
-	height: 78%
+	height: 88%
 	display: flex
 	align-items: flex-end
 	justify-content: center
 
 	@media (max-width: 767px)
 		left: 68%
-		height: 62%
+		height: 70%
 
 // ビデオ通話らしさの薄皮: 周辺減光と「通話中」バッジ。操作は透過する
 .cam-chrome

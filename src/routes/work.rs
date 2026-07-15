@@ -39,9 +39,6 @@ enum TalkPhase {
 #[derive(Deserialize, Default)]
 struct TalkContext {
     phase: Option<TalkPhase>,
-    #[serde(rename = "setIndex")]
-    set_index: Option<u32>,
-    sets: Option<u32>,
     hour: Option<u32>,
 }
 
@@ -69,9 +66,6 @@ fn build_work_prompt(req: &TalkRequest) -> String {
             TalkPhase::Idle => "開始前",
         };
         situation.push_str(&format!("- いまは{label}\n"));
-    }
-    if let (Some(i), Some(n)) = (ctx.set_index, ctx.sets) {
-        situation.push_str(&format!("- {n}セット中の{i}セット目\n"));
     }
     if let Some(h) = ctx.hour {
         situation.push_str(&format!("- 時刻はだいたい{h}時\n"));
@@ -136,14 +130,11 @@ mod tests {
             kind: TalkKind::Milestone,
             context: TalkContext {
                 phase: Some(TalkPhase::Break),
-                set_index: Some(2),
-                sets: Some(4),
                 hour: Some(15),
             },
         };
         let p = build_work_prompt(&req);
         assert!(p.contains("いまは休憩中"));
-        assert!(p.contains("4セット中の2セット目"));
         assert!(p.contains("15時"));
         assert!(p.contains("出力スキーマ"));
     }

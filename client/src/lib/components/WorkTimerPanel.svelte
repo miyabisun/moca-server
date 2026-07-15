@@ -42,16 +42,8 @@
 			/>
 		</svg>
 		<div class="readout">
-			<span class="phase-label">{PHASE_LABEL[timer.phase]}</span>
+			<span class="phase-label">{timer.asking ? 'どうする?' : PHASE_LABEL[timer.phase]}</span>
 			<span class="time">{fmt(display)}</span>
-			{#if timer.setIndex > 0}
-				<span class="sets" aria-label="セット進行">
-					{#each Array(timer.settings.sets) as _, i}
-						<span class="dot" class:done={i + 1 < timer.setIndex} class:now={i + 1 === timer.setIndex}
-						></span>
-					{/each}
-				</span>
-			{/if}
 		</div>
 	</div>
 
@@ -60,11 +52,16 @@
 			<button type="button" class="primary" onclick={pause}>一時停止</button>
 		{:else}
 			<button type="button" class="primary" onclick={start}>
-				{timer.phase === 'idle' ? '開始' : '再開'}
+				{timer.asking ? 'もう1セット' : timer.phase === 'idle' ? '開始' : '再開'}
 			</button>
 		{/if}
-		<button type="button" class="quiet" onclick={reset} disabled={timer.phase === 'idle'}>
-			リセット
+		<button
+			type="button"
+			class="quiet"
+			onclick={reset}
+			disabled={timer.phase === 'idle' && !timer.asking}
+		>
+			終了
 		</button>
 		<button
 			type="button"
@@ -99,16 +96,6 @@
 				onchange={(e) => setNum('breakMin', e.currentTarget.value)}
 			/>
 			分
-		</label>
-		<label>
-			<input
-				type="number"
-				min="1"
-				max="12"
-				value={timer.settings.sets}
-				onchange={(e) => setNum('sets', e.currentTarget.value)}
-			/>
-			セット
 		</label>
 		<label>
 			おしゃべり
@@ -173,22 +160,6 @@
 	font-variant-numeric: tabular-nums
 	color: var(--c-text)
 	line-height: 1.1
-
-.sets
-	display: flex
-	gap: var(--sp-1)
-
-.dot
-	width: 8px
-	height: 8px
-	border-radius: var(--radius-full)
-	background: var(--c-border)
-
-	&.done
-		background: var(--c-accent)
-
-	&.now
-		background: var(--c-accent-active)
 
 .controls
 	display: flex

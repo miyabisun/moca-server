@@ -10,8 +10,12 @@
 // - midWork は「作業しながら漏れる独り言」+「集中が切れたときの
 //   くっそどうでもいい雑談」。話しかけはどうでもいい内容に限る
 
-// 独り言/雑談 1 フレーズを 1 エントリにする省略記法。基本は感情なし・小声ぎみの speed 92。
-const mutter = (text, extra = {}) => [{ text, speed: 92, ...extra }];
+// 独り言/雑談 1 フレーズを 1 エントリにする省略記法。「大声で独り言を言う友達は
+// 邪魔」問題への対策として、既定で bosoboso 55 + speed 90 のぼそぼそ小声に寄せる
+// (再生音量も voice.svelte.js 側でチャッターだけ下げる)。個別指定は上書きマージ。
+const mutter = (text, extra = {}) => [
+	{ text, speed: 90, ...extra, emotion: { bosoboso: 55, ...(extra.emotion ?? {}) } }
+];
 
 export const workLines = {
 	// タイマー開始
@@ -32,18 +36,9 @@ export const workLines = {
 			{ text: 'ちょっと休も。', speed: 92 }
 		]
 	],
-	// 休憩終了 → 次のセットへ
-	breakEnd: [
-		[{ text: 'そろそろ再開しよっか。', speed: 92 }],
-		[{ text: '休憩おわりー。続きやろ。', speed: 95 }],
-		[
-			{ text: 'よし。', pause: 300 },
-			{ text: 'もうひと山いこっか。', speed: 95 }
-		]
-	],
-	// 全セット完了
-	allDone: [
-		[{ text: '終わったー。おつかれさま。', emotion: { honwaka: 15 }, speed: 94 }],
+	// 終了 (ユーザーがセッション中に終了ボタンを押したとき)
+	end: [
+		[{ text: '終わりー。おつかれさま。', emotion: { honwaka: 15 }, speed: 94 }],
 		[
 			{ text: 'はい、今日はここまで。', pause: 300 },
 			{ text: 'ちゃんと寝なよー?', speed: 92 }
@@ -54,6 +49,30 @@ export const workLines = {
 	resume: [
 		[{ text: 'あ、おかえり。タイマー進めといたよ。', speed: 92 }],
 		[{ text: 'ん、戻った? 続きやろ。', speed: 92 }]
+	],
+	// 休憩明けの問いかけ (askNext)。時間帯別プールは pickAskLine が選ぶ
+	askGeneric: [
+		[{ text: '休憩おわりだけど、もう1セットやる?', speed: 94 }],
+		[{ text: 'どうするー? 続ける?', speed: 92 }],
+		[{ text: '作業おわった? まだいけそう?', speed: 92 }],
+		[{ text: 'もうひと山いく? やめとく?', speed: 94 }]
+	],
+	// お昼は 12 時をまたいだかで言い回しを変える (11時台 = そろそろ / 12時台 = 出遅れ)
+	askLunch: [
+		[{ text: 'そろそろお昼だけど、ごはんどうする?', speed: 92 }],
+		[{ text: 'お昼たべてからにする? それとももう1セット?', speed: 92 }]
+	],
+	askLunchLate: [
+		[{ text: '出遅れ気味だけど、お昼どうする?', speed: 92 }],
+		[{ text: 'もうお昼まわってるよ。ごはん食べた?', speed: 92 }]
+	],
+	askDinner: [
+		[{ text: '夜ごはんどうする? 食べてからでもいいよ。', speed: 92 }],
+		[{ text: 'そろそろ夕飯の時間じゃない? 続ける?', speed: 92 }]
+	],
+	askNight: [
+		[{ text: 'もういい時間だよ? 今日は終わらない?', speed: 90 }],
+		[{ text: 'もう夜だしさ、無理しないで終わっとく?', speed: 90 }]
 	],
 	// 作業中に漏れる独り言と、集中が切れたときのどうでもいい雑談 (チャッター)
 	midWork: [
@@ -200,4 +219,15 @@ export function pickLine(category) {
 	if (pool.length > 1 && idx === lastPick[category]) idx = (idx + 1) % pool.length;
 	lastPick[category] = idx;
 	return pool[idx];
+}
+
+// 休憩明けの問いかけ。時間帯に合うプールがあればそちら優先 (お昼前 11時台 /
+// お昼過ぎ 12時台 / 夕飯 17-19 / 夜 21時以降と深夜)、それ以外は汎用の
+// 「もう1セットやる?」系。
+export function pickAskLine(hour) {
+	if (hour === 11) return pickLine('askLunch');
+	if (hour === 12) return pickLine('askLunchLate');
+	if (hour >= 17 && hour < 19) return pickLine('askDinner');
+	if (hour >= 21 || hour < 4) return pickLine('askNight');
+	return pickLine('askGeneric');
 }

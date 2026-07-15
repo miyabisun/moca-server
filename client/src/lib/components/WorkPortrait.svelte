@@ -29,11 +29,47 @@
 		return () => rmQuery.removeEventListener('change', onChange);
 	});
 
-	// ベース表情: 休憩中は微笑み、それ以外は通常。声かけ中はセリフの感情サマリで
-	// 上書きする (emotions.js の 5 軸 → portrait.js の対応表)。
-	let baseEye = $derived(timer.phase === 'break' ? 'smile' : 'normal');
+	// ベース表情はドリフトさせる。年頃の少女がずっと真顔は不自然 (ユーザー確定):
+	// しかめっ面 (真剣)・半眼ジト・目瞑り・眠そう・たまにサボってる感を、
+	// 20〜50 秒ごとに重み付きプールから引き直す。声かけ中はセリフの感情が勝つ。
+	const WORK_POOL = [
+		'normal',
+		'normal',
+		'normal',
+		'serious',
+		'serious',
+		'tearyJito',
+		'tearyJito',
+		'sleepy',
+		'sleepy',
+		'smileClosed',
+		'smile'
+	];
+	const BREAK_POOL = ['smile', 'smile', 'smileClosed', 'smileClosed', 'sleepy', 'normal'];
+	let idleEye = $state('normal');
+	$effect(() => {
+		const pool = timer.phase === 'break' ? BREAK_POOL : WORK_POOL;
+		idleEye = timer.phase === 'break' ? 'smile' : 'normal'; // フェーズ切替の初期顔
+		let alive = true;
+		let t = null;
+		const loop = () => {
+			t = setTimeout(
+				() => {
+					if (!alive) return;
+					idleEye = pool[Math.floor(Math.random() * pool.length)];
+					loop();
+				},
+				20_000 + Math.random() * 30_000
+			);
+		};
+		loop();
+		return () => {
+			alive = false;
+			clearTimeout(t);
+		};
+	});
 	let eye = $derived(
-		voice.speaking ? eyeForEmotion(summarizeEmotion(voice.currentScript), baseEye) : baseEye
+		voice.speaking ? eyeForEmotion(summarizeEmotion(voice.currentScript), idleEye) : idleEye
 	);
 
 	// 瞬き: 3〜8 秒間隔で 120ms だけ瞬き差分セットに切り替える。瞬きペアの無い
@@ -120,19 +156,20 @@
 
 <style lang="sass">
 // ノートPCのカメラに写っている想定なので全身は見せない。元画像 (1414x2000) の
-// 顔〜胸元だけ = x 400-1020 / y 40-760 の領域を切り出すバストアップ。
-// 肘から先や足が見えるのはコンセプト違反 (手元はカメラの下)。
+// x 420-1000 / y 30-570 = 顔〜リボンの下端ギリギリまでを切り出す (ユーザー確定:
+// 手元は絶対に写さない — 立ち絵の手はろくろを回しているので作業中に見えない。
+// 胸元で組んだ手は src y≈600 から始まるため、下端 570 で確実にフレーム外)。
 .bust
 	position: relative
 	height: 100%
-	aspect-ratio: 620 / 720
+	aspect-ratio: 580 / 540
 	overflow: hidden
 
-// クロップ領域の換算: 幅 = 1414/620、左 = -400/620、上 = -40/720 (コンテナ基準)。
+// クロップ領域の換算: 幅 = 1414/580、左 = -420/580、上 = -30/540 (コンテナ基準)。
 .portrait
 	position: absolute
-	width: 228%
-	left: -64.5%
+	width: 243.8%
+	left: -72.4%
 	top: -5.6%
 	max-width: none
 	user-select: none

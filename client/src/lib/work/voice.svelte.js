@@ -9,7 +9,7 @@
 
 import { sayScriptRequest, workTalk } from '$lib/api.js';
 import { onTransition, timer } from '$lib/work/timer.svelte.js';
-import { pickLine } from '$lib/work/lines.js';
+import { pickAskLine, pickLine } from '$lib/work/lines.js';
 import { player } from '$lib/player.svelte.js';
 
 // LLM 生成を混ぜる確率とクライアント側の見切り時間。20 秒返らなければ固定セリフに
@@ -19,7 +19,13 @@ const LLM_TIMEOUT_MS = 20_000;
 
 const CHATTER_KEY = 'moca-work-chatter';
 // 作業中チャッターの頻度 (分のレンジ)。'off' で無効。
-const CHATTER_RANGES = { normal: [5, 15], sparse: [10, 20] };
+// 「いらん事してる感」を出すため高頻度 (ユーザー確定: ふつう 1〜1.5分)。
+const CHATTER_RANGES = { normal: [1, 1.5], sparse: [5, 10] };
+// チャッターの再生音量。独り言は大声だと邪魔なので絞る (節目は等倍)。
+const MUTTER_VOLUME = 0.45;
+// チャッターに時事ネタ (LLM) を混ぜる確率。間隔が 1 分台と短いので低めにして、
+// LLM 呼び出しを 10 分に 1 回程度に抑える (節目の LLM_PROBABILITY とは別)。
+const NEWS_PROBABILITY = 0.1;
 
 function loadChatter() {
 	try {
@@ -56,8 +62,9 @@ function revoke() {
 
 async function drain() {
 	if (playing) return;
-	const script = queue.shift();
-	if (script == null) return;
+	const entry = queue.shift();
+	if (entry == null) return;
+	const { script, volume } = entry;
 	playing = true;
 	const gen = generation;
 	try {
@@ -73,6 +80,7 @@ async function drain() {
 		objectUrl = URL.createObjectURL(blob);
 		audio ??= new Audio();
 		audio.src = objectUrl;
+		audio.volume = volume;
 		currentScript = script;
 		speaking = true;
 		await new Promise((resolve) => {
@@ -95,14 +103,15 @@ async function drain() {
 }
 
 // script JSON を直接キューに積む。節目・チャッター・LLM 生成すべてこの 1 本を通る。
-export function speakScript(script) {
+// volume は再生時の Audio.volume (独り言 = MUTTER_VOLUME、節目 = 等倍)。
+export function speakScript(script, volume = 1) {
 	if (!enabled || !script) return;
-	queue.push(script);
+	queue.push({ script, volume });
 	drain();
 }
 
-export function speakCategory(category) {
-	speakScript(pickLine(category));
+export function speakCategory(category, volume = 1) {
+	speakScript(pickLine(category), volume);
 }
 
 // LLM で一言生成して喋る。失敗・20 秒超過は固定セリフ (fallbackCategory) に
@@ -111,9 +120,9 @@ export function speakCategory(category) {
 let llmInFlight = false;
 let llmController = null;
 
-async function speakGenerated(kind, fallbackCategory) {
+async function speakGenerated(kind, fallbackCategory, volume = 1) {
 	if (llmInFlight) {
-		speakCategory(fallbackCategory);
+		speakCategory(fallbackCategory, volume);
 		return;
 	}
 	llmInFlight = true;
@@ -123,16 +132,14 @@ async function speakGenerated(kind, fallbackCategory) {
 	try {
 		const context = {
 			phase: timer.phase,
-			setIndex: timer.setIndex,
-			sets: timer.settings.sets,
 			hour: new Date().getHours()
 		};
 		const script = await workTalk(kind, context, llmController.signal);
 		if (gen !== generation) return;
-		speakScript(script);
+		speakScript(script, volume);
 	} catch {
 		if (gen !== generation) return;
-		speakCategory(fallbackCategory);
+		speakCategory(fallbackCategory, volume);
 	} finally {
 		clearTimeout(deadline);
 		llmController = null;
@@ -192,7 +199,7 @@ export const voice = {
 // work フェーズ突入時に「次の一言」を setTimeout 1 本だけ予約する (interval は
 // 使わない)。発火時に条件を満たさなければ喋らずに対応する再予約だけ行う:
 // 一時停止中 (phase は work のまま) は再予約、idle まで落ちていたら破棄 —
-// 次の start / breakEnd が改めて予約する。台本再生中は遠慮して 90 秒後に出直す。
+// 次の start が改めて予約する。台本再生中は遠慮して 90 秒後に出直す。
 let chatterTimer = null;
 
 function clearChatterTimer() {
@@ -224,8 +231,9 @@ function fireChatter() {
 		return;
 	}
 	// たまに時事ネタ (AI 界隈・流行りのゲーム) を LLM で拾ってきて喋る。
-	if (enabled && Math.random() < LLM_PROBABILITY) speakGenerated('news', 'midWork');
-	else speakCategory('midWork');
+	// 独り言・雑談は音量を絞る (大声の独り言は邪魔)。
+	if (enabled && Math.random() < NEWS_PROBABILITY) speakGenerated('news', 'midWork', MUTTER_VOLUME);
+	else speakCategory('midWork', MUTTER_VOLUME);
 	armChatter();
 }
 
@@ -233,17 +241,22 @@ function fireChatter() {
 const CATEGORY_BY_EVENT = {
 	start: 'start',
 	breakStart: 'breakStart',
-	breakEnd: 'breakEnd',
-	allDone: 'allDone',
+	end: 'end',
 	resync: 'resume'
 };
 
 onTransition((event) => {
-	const category = CATEGORY_BY_EVENT[event];
-	if (category) {
-		// 節目もたまに LLM 生成でバリエーションを出す (失敗は固定セリフ)。
-		if (enabled && Math.random() < LLM_PROBABILITY) speakGenerated('milestone', category);
-		else speakCategory(category);
+	if (event === 'askNext') {
+		// 休憩明けの問いかけは時間帯で固定セリフを選ぶ (LLM は挟まない —
+		// 「どうする?」はユーザーの返答を待つ確実な合図なので言い回しをブレさせない)。
+		speakScript(pickAskLine(new Date().getHours()));
+	} else {
+		const category = CATEGORY_BY_EVENT[event];
+		if (category) {
+			// 節目もたまに LLM 生成でバリエーションを出す (失敗は固定セリフ)。
+			if (enabled && Math.random() < LLM_PROBABILITY) speakGenerated('milestone', category);
+			else speakCategory(category);
+		}
 	}
 	// チャッターの予約は「いまどのフェーズにいるか」だけで決める。
 	if (timer.phase === 'work' && timer.running) armChatter();
