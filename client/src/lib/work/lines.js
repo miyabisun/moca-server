@@ -13,8 +13,9 @@
 // - 表情の使い分け: 話しかけ (雑談・節目) は 001=normal でこちらを見る。
 //   独り言は半眼 (sleepy) を基本に、内容へ合わせて割り振る
 
-// 独り言 1 フレーズ。既定で bosoboso 55 + speed 90 のぼそぼそ小声 + 半眼。
-const mutter = (text, extra = {}, eye = 'sleepy') => ({
+// 独り言 1 フレーズ。既定で bosoboso 55 + speed 90 のぼそぼそ小声。
+// 目は 001=normal 基準 (208 は「半眼」ではなくほぼ目瞑りに見えるため使わない)。
+const mutter = (text, extra = {}, eye = 'normal') => ({
 	eye,
 	script: [{ text, speed: 90, ...extra, emotion: { bosoboso: 55, ...(extra.emotion ?? {}) } }]
 });

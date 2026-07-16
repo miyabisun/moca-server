@@ -1,5 +1,4 @@
 <script>
-	import { timer } from '$lib/work/timer.svelte.js';
 	import { voice } from '$lib/work/voice.svelte.js';
 	import { EYES, imageFor } from '$lib/work/portrait.js';
 
@@ -28,11 +27,10 @@
 		return () => rmQuery.removeEventListener('change', onChange);
 	});
 
-	// アイドル顔は固定 (ユーザー確定: 表情はセリフ・演出に割り振り、デフォルトは
-	// 動かさない)。作業中 = 半眼 (sleepy) で手元に集中、休憩中と待機中 = 001 で
-	// こちらを見る。voice.expression (セリフごとの表情・目閉じホールド) が最優先。
-	let idleEye = $derived(timer.phase === 'work' ? 'sleepy' : 'normal');
-	let eye = $derived(voice.expression ?? idleEye);
+	// アイドル顔は 001=normal 固定 (ユーザー確定: 表情はセリフ・演出に割り振り、
+	// デフォルトは動かさない。208 は「半眼」ではなくほぼ目瞑りに見えるので不採用)。
+	// voice.expression (セリフごとの表情・目閉じホールド) が最優先。
+	let eye = $derived(voice.expression ?? 'normal');
 
 	// 瞬き: 3〜8 秒間隔で 120ms だけ瞬き差分セットに切り替える。瞬きペアの無い
 	// 表情 (目閉じ系・眠そう) はスキップ。発話中も止める — 瞬き×口の組み合わせ

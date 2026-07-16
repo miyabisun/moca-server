@@ -129,13 +129,14 @@
 	pointer-events: none
 	background: linear-gradient(to left, transparent, rgba(0, 0, 0, 0.3))
 
-// 出入り口。奥の壁に付いた板ドア。6畳なので近い = 大きく、下は見切れる
+// 出入り口。奥の壁に付いた板ドア。6畳なので近い = 大きく、下は見切れる。
+// 人が通れる横幅 (ユーザー指摘で 2 倍に拡幅)、上端は少し低めに。
 .door
 	position: absolute
 	left: 700px
-	top: 14vh
+	top: 21vh
 	bottom: -8%
-	width: 230px
+	width: 460px
 	background: linear-gradient(180deg, #55402e, #4a3728)
 	border: 4px solid rgba(0, 0, 0, 0.25)
 	border-bottom: none
