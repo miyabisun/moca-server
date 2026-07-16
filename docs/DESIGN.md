@@ -377,7 +377,8 @@ Domain components on top of the Sumi recipes:
     `honwaka` never exceeds 20 (higher reads as a put-on phone voice);
     calm is expressed with `speed` ≈ 90, not warmth axes. Chatter is
     overheard muttering (「ええと……」「よし、動いた!」, base
-    `bosoboso` ≈ 55) plus deliberately trivial small talk, played at
+    `bosoboso` ≈ 85 — anything lower barely registers in the actual
+    output) plus deliberately trivial small talk, played at
     reduced volume (~0.45 — a friend muttering, not addressing you)
     every 1–1.5 minutes (ひかえめ: 5–10min).
   - **Expression contract:** the idle face never drifts on its own —

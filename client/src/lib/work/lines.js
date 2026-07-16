@@ -10,14 +10,17 @@
 // - 「一人だと試験勉強をサボる」から始まった相互監視のゆる作業通話が習慣化して、
 //   今日はその何気ない n 回目。だから口調は砕けたタメ口、気負いゼロ
 // - honwaka は 20 以下。基本はニュートラルが一番自然で、ゆったり感は speed 90 前後
-// - 表情の使い分け: 話しかけ (雑談・節目) は 001=normal でこちらを見る。
-//   独り言は半眼 (sleepy) を基本に、内容へ合わせて割り振る
+// - 「ー」の伸ばし棒はカタカナ語以外で使わない (VOICEPEAK の読みが不自然になる。
+//   ✗「いきましょー」→ ○「いきましょう」、✗「そうだねー」→ ○「そうだねぇ」)
+// - 表情の使い分け: 話しかけ (雑談・節目) も独り言も 001=normal を基準に、
+//   内容へ合わせて真剣/ジト目/涙目/笑顔を割り振る
 
-// 独り言 1 フレーズ。既定で bosoboso 55 + speed 90 のぼそぼそ小声。
+// 独り言 1 フレーズ。既定で bosoboso 85 + speed 90 のぼそぼそ小声
+// (55 では実際の出力にぼそぼそ感がほぼ乗らない — ユーザー実聴で確定)。
 // 目は 001=normal 基準 (208 は「半眼」ではなくほぼ目瞑りに見えるため使わない)。
 const mutter = (text, extra = {}, eye = 'normal') => ({
 	eye,
-	script: [{ text, speed: 90, ...extra, emotion: { bosoboso: 55, ...(extra.emotion ?? {}) } }]
+	script: [{ text, speed: 90, ...extra, emotion: { bosoboso: 85, ...(extra.emotion ?? {}) } }]
 });
 
 // 話しかけ (モカがカメラ=こちらを見て話す)。目は 001=normal。
@@ -27,34 +30,34 @@ export const workLines = {
 	// タイマー開始
 	start: [
 		say([{ text: 'んじゃ、始めよっか。' }]),
-		say([{ text: 'はーい、作業会かいさーい。', speed: 98 }]),
-		say([{ text: 'タイマー入れるよー。よーい、どん。' }]),
+		say([{ text: 'はぁい、作業会はじめるよ。', speed: 98 }]),
+		say([{ text: 'タイマー入れるよ。ようい、どん。' }]),
 		say([{ text: 'わたしもこっちやるから、お互いがんばろ。', speed: 95 }]),
-		say([{ text: '今日もゆるっとやってこー。', speed: 92 }])
+		say([{ text: '今日もゆるっとやってこう。', speed: 92 }])
 	],
 	// 作業終了 → 休憩入り (このあと voice がシーケンスで「うぅ、疲れたぁ」に繋ぐ)
 	breakStart: [
-		say([{ text: 'はい、そこまでー。', speed: 95 }]),
-		say([{ text: 'おつかれー、休憩休憩。', speed: 95 }]),
+		say([{ text: 'はい、そこまで。', speed: 95 }]),
+		say([{ text: 'おつかれぇ、休憩休憩。', speed: 95 }]),
 		say([{ text: 'いったん手止めよ。お茶お茶。', speed: 94 }])
 	],
 	// 休憩入りシーケンスの締め (目を閉じたまま漏れる一言)
 	breakTired: [
 		{
 			eye: 'normalBlink',
-			script: [{ text: 'うぅ、疲れたぁ……。', speed: 85, emotion: { bosoboso: 50 } }]
+			script: [{ text: 'うぅ、疲れたぁ……。', speed: 85, emotion: { bosoboso: 80 } }]
 		},
 		{
 			eye: 'normalBlink',
-			script: [{ text: 'ふはぁ……。がんばったぁ……。', speed: 84, emotion: { bosoboso: 50 } }]
+			script: [{ text: 'ふはぁ……。がんばったぁ……。', speed: 84, emotion: { bosoboso: 80 } }]
 		}
 	],
 	// 終了 (ユーザーがセッション中に終了ボタンを押したとき)
 	end: [
-		say([{ text: '終わりー。おつかれさま。', emotion: { honwaka: 15 }, speed: 94 }]),
+		say([{ text: '終わりぃ。おつかれさま。', emotion: { honwaka: 15 }, speed: 94 }]),
 		say([
 			{ text: 'はい、今日はここまで。', pause: 300 },
-			{ text: 'ちゃんと寝なよー?', speed: 92 }
+			{ text: 'ちゃんと寝なよぉ?', speed: 92 }
 		]),
 		say([{ text: 'おつかれ。わたしもキリついたし、のんびりしよ。', speed: 92 }])
 	],
@@ -66,7 +69,7 @@ export const workLines = {
 	// 休憩明けの問いかけ (askNext)。時間帯別プールは pickAskLine が選ぶ
 	askGeneric: [
 		say([{ text: '休憩おわりだけど、もう1セットやる?', speed: 94 }]),
-		say([{ text: 'どうするー? 続ける?', speed: 92 }]),
+		say([{ text: 'どうする? 続ける?', speed: 92 }]),
 		say([{ text: '作業おわった? まだいけそう?', speed: 92 }]),
 		say([{ text: 'もうひと山いく? やめとく?', speed: 94 }])
 	],
@@ -107,7 +110,7 @@ export const workLines = {
 		mutter('なるほどね……。', { speed: 90 }, 'normal'),
 		mutter('ちょっと整理しよ……。', {}, 'serious'),
 		mutter('一回落ち着こう……。', { speed: 88 }, 'serious'),
-		mutter('えー、なんでだろ。', {}, 'serious'),
+		mutter('えぇ、なんでだろ。', {}, 'serious'),
 		mutter('うーん、惜しい……。'),
 		mutter('あとちょっとな気がする……。'),
 		mutter('ここが噛み合わない……。', {}, 'serious'),
@@ -141,23 +144,23 @@ export const workLines = {
 		mutter('あー……保存してない……。', { emotion: { teary: 25 }, speed: 90 }, 'teary'),
 		mutter('あれ、動かない……。', {}, 'serious'),
 		mutter('なんで!?', { emotion: { angry: 15 }, speed: 105 }, 'serious'),
-		mutter('さっきまで動いてたのに……。', { emotion: { bosoboso: 30 } }, 'tearyJito'),
+		mutter('さっきまで動いてたのに……。', { }, 'tearyJito'),
 		mutter('うそでしょ……。', { speed: 90 }, 'tearyJito'),
-		mutter('また誤字ってる……。', { emotion: { bosoboso: 25 } }, 'tearyJito'),
+		mutter('また誤字ってる……。', { }, 'tearyJito'),
 		mutter('ここ違うじゃん……。', {}, 'serious'),
-		mutter('はぁ、やり直し……。', { emotion: { bosoboso: 30 }, speed: 88 }, 'tearyJito'),
+		mutter('はぁ、やり直し……。', { speed: 88 }, 'tearyJito'),
 		mutter('んん!?', { speed: 105 }, 'serious'),
 		mutter('……見なかったことにしよ。', { speed: 90 }, 'tearyJito'),
 		mutter('おかしいなぁ……。', {}, 'serious'),
-		mutter('誰だこれ書いたの……わたしだ。', { emotion: { bosoboso: 25 } }, 'tearyJito'),
+		mutter('誰だこれ書いたの……わたしだ。', { }, 'tearyJito'),
 		mutter('落ち着け、わたし……。', { speed: 88 }, 'serious'),
-		mutter('一文字違いかぁ……。', { emotion: { bosoboso: 20 } }, 'tearyJito'),
+		mutter('一文字違いかぁ……。', { }, 'tearyJito'),
 		mutter('惜しいことしたな……。'),
-		mutter('これは沼の気配……。', { emotion: { bosoboso: 30 }, speed: 90 }, 'tearyJito'),
+		mutter('これは沼の気配……。', { speed: 90 }, 'tearyJito'),
 		mutter('うぅ、進まない……。', { emotion: { teary: 15 }, speed: 88 }, 'teary'),
 		// --- 小休止・生活 (半眼のまま) ---
 		mutter('お茶飲も……。', { speed: 90 }),
-		mutter('んー、伸びー……。', { speed: 85 }),
+		mutter('んー、伸びぃ……。', { speed: 85 }),
 		mutter('ちょっと目が疲れたかも……。', { speed: 88 }),
 		mutter('肩まわそ……。', { speed: 88 }),
 		mutter('水分水分……。', { speed: 92 }),
@@ -197,9 +200,9 @@ export const workLines = {
 		mutter('ふんふんふーん……。', { speed: 88 }, 'smile'),
 		mutter('たたたっと……。', { speed: 95 }),
 		mutter('……っと。', { speed: 92 }),
-		mutter('カタカタうるさくないかな、わたし……。', { emotion: { bosoboso: 25 } }, 'normal'),
-		mutter('しーん、としてる……。', { emotion: { bosoboso: 20 }, speed: 90 }),
-		mutter('集中してるなぁ……。', { emotion: { bosoboso: 20 }, speed: 90 }, 'normal'),
+		mutter('カタカタうるさくないかな、わたし……。', { }, 'normal'),
+		mutter('しーん、としてる……。', { speed: 90 }),
+		mutter('集中してるなぁ……。', { speed: 90 }, 'normal'),
 		mutter('わたしも負けてられない……。', { speed: 94 }, 'serious'),
 		mutter('もくもく……。', { speed: 90 }),
 		mutter('ん、いい時間の流れ……。', { speed: 88 }, 'smile'),
@@ -213,7 +216,7 @@ export const workLines = {
 		mutter('スマホ見たら負けだと思ってる、今は。', { speed: 94 }, 'normal'),
 		mutter('明日って体育あったっけ……あったら嫌だな。', { speed: 92 }, 'normal'),
 		mutter('シャー芯、さっき全部折れた。どうでもいいけど。', { speed: 94 }, 'normal'),
-		mutter('ねー、集中してる? ……してるか。ごめん。', { speed: 92 }, 'normal'),
+		mutter('ねぇ、集中してる? ……してるか。ごめん。', { speed: 92 }, 'normal'),
 		mutter('試験終わったらどっか行こうね。', { emotion: { honwaka: 15 }, speed: 94 }, 'smile'),
 		mutter('眠くなってきたかも……あと10分がんばる。', { speed: 88 }, 'normal'),
 		mutter('隣の家の犬、今日もずっと鳴いてる。', { speed: 92 }, 'normal'),
@@ -230,7 +233,7 @@ export const performances = [
 	{
 		// ひと休みのつぶやき → 目を閉じて 8 秒 → 気合いを入れ直す
 		openers: [
-			mutter('ううんー、伸びぃー……。', { speed: 82 }, 'normal'),
+			mutter('ううんっ、伸びぃ……。', { speed: 82 }, 'normal'),
 			mutter('ええと、っと……。', { speed: 88 }),
 			mutter('ねむ……。', { speed: 82 }),
 			mutter('晩ごはん、何かなぁ……。', { speed: 90 }, 'normal')
@@ -246,7 +249,7 @@ export const performances = [
 			mutter('ひーん……。', { speed: 88, emotion: { teary: 30 } }, 'teary')
 		],
 		hold: { eye: 'blushBlink', ms: 8_000 },
-		closer: mutter('しょうがない、切り替えてこ。', { speed: 95, emotion: { bosoboso: 30 } }, 'normal')
+		closer: mutter('しょうがない、切り替えてこ。', { speed: 95, }, 'normal')
 	},
 	{
 		// ひとりでドヤる → 目を閉じて余韻 8 秒 → 半眼に戻るが口元は 20 秒嬉しいまま

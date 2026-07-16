@@ -106,11 +106,16 @@ async function playScript(entry) {
 		audio ??= new Audio();
 		audio.src = objectUrl;
 		audio.volume = entry.volume ?? 1;
-		expression = entry.eye ?? null;
 		currentScript = entry.script;
-		speaking = true;
 		await new Promise((resolve) => {
 			wakeAudio = resolve;
+			// 口パク (speaking) と表情は「実際に音が出始めた瞬間」(playing イベント)
+			// まで遅延させる。play() 呼び出し時点で立てるとデコードや出力遅延の分だけ
+			// 口が先に動いてしまう (ユーザー指摘)。
+			audio.onplaying = () => {
+				expression = entry.eye ?? null;
+				speaking = true;
+			};
 			audio.onended = resolve;
 			audio.onerror = resolve;
 			audio.play().catch(resolve);
@@ -118,6 +123,7 @@ async function playScript(entry) {
 	} catch {
 		// fire-and-forget: 失敗は握りつぶして次のセリフへ
 	} finally {
+		if (audio) audio.onplaying = null;
 		wakeAudio = null;
 		controller = null;
 		speaking = false;
