@@ -1,14 +1,15 @@
 // s16le/48k/mono PCM を Ogg/Opus へ逐次エンコードするストリーミングエンコーダ。
-// システム libopus (pkg-config 経由) にリンクする opus クレートと ogg コンテナを使う。
+// コーデックは ropus (libopus 固定小数点版の純 Rust 移植、C リファレンスと
+// ビット一致) + ogg コンテナで、C ツールチェーン依存なしに全 OS でビルドできる。
 // 合格基準は「ffplay/Chrome で正しく再生され尺が合う」= 完全仕様準拠より実再生優先。
 
 use ogg::{PacketWriteEndInfo, PacketWriter};
-use opus::{Application, Bitrate, Channels, Encoder};
+use ropus::{Application, Bitrate, Channels, Encoder};
 
 const SAMPLE_RATE: u32 = 48000;
 /// 20ms フレーム = 960 サンプル (48kHz mono)。
 const FRAME_SAMPLES: usize = 960;
-const BITRATE: i32 = 64000;
+const BITRATE: u32 = 64000;
 /// Ogg logical stream serial。単一ストリームなので固定値でよい ("MOCA")。
 const SERIAL: u32 = 0x4d4f_4341;
 
@@ -54,15 +55,12 @@ pub struct OpusStream {
 impl OpusStream {
     /// エンコーダを初期化し OpusHead(BOS) / OpusTags ページを内部バッファへ書き込む。
     pub fn new() -> Result<Self, String> {
-        let mut encoder = Encoder::new(SAMPLE_RATE, Channels::Mono, Application::Audio)
+        let encoder = Encoder::builder(SAMPLE_RATE, Channels::Mono, Application::Audio)
+            .bitrate(Bitrate::Bits(BITRATE))
+            .build()
             .map_err(|e| format!("opus encoder init: {e}"))?;
-        encoder
-            .set_bitrate(Bitrate::Bits(BITRATE))
-            .map_err(|e| format!("opus set_bitrate: {e}"))?;
         // pre-skip はエンコーダの lookahead (符号化遅延)。デコーダが先頭で読み飛ばす量。
-        let pre_skip = encoder
-            .get_lookahead()
-            .map_err(|e| format!("opus get_lookahead: {e}"))? as u16;
+        let pre_skip = encoder.lookahead() as u16;
 
         let mut writer = PacketWriter::new(Vec::new());
         writer
@@ -98,10 +96,12 @@ impl OpusStream {
 
     /// 1 フレーム (960 サンプル固定) をエンコードして Ogg ページへ書く。
     fn write_frame(&mut self, frame: &[i16], end: bool) -> Result<(), String> {
-        let packet = self
+        let mut packet = vec![0u8; 4000];
+        let len = self
             .encoder
-            .encode_vec(frame, 4000)
+            .encode(frame, &mut packet)
             .map_err(|e| format!("opus encode: {e}"))?;
+        packet.truncate(len);
         self.encoded_samples += FRAME_SAMPLES as u64;
         let granule = if end {
             // 末尾パディングを打ち切る: 出力尺 = granule - pre_skip = input_samples。
@@ -182,5 +182,49 @@ mod tests {
         let bytes = s.take_bytes();
         assert!(!bytes.is_empty(), "flush must emit an audio page");
         assert_eq!(&bytes[0..4], b"OggS");
+    }
+
+    /// ラウンドトリップ検証: 440Hz サイン波 1 秒をエンコードし、Ogg パケットを
+    /// 取り出して ropus のデコーダで復号。フレーム数と信号エネルギーが保たれる
+    /// ことを確認する (無音化・破損エンコードへの回帰ガード)。
+    #[test]
+    fn sine_roundtrip_preserves_duration_and_energy() {
+        // ヘッダページも含めた完全なストリームを丸ごと読ませる (BOS が無いと
+        // PacketReader は InvalidData で拒否する)。
+        let mut s = OpusStream::new().unwrap();
+        let pcm: Vec<u8> = (0..SAMPLE_RATE)
+            .flat_map(|i| {
+                let t = i as f32 / SAMPLE_RATE as f32;
+                let v = ((t * 440.0 * std::f32::consts::TAU).sin() * 12000.0) as i16;
+                v.to_le_bytes()
+            })
+            .collect();
+        s.push_pcm(&pcm).unwrap();
+        s.finish().unwrap();
+        let bytes = s.take_bytes();
+
+        // Ogg からパケットを取り出して先頭 2 つ (OpusHead/OpusTags) を飛ばす。
+        let mut reader = ogg::PacketReader::new(std::io::Cursor::new(bytes));
+        let mut decoder = ropus::Decoder::new(SAMPLE_RATE, Channels::Mono).unwrap();
+        let mut out = vec![0i16; FRAME_SAMPLES];
+        let mut frames = 0u32;
+        let mut energy = 0f64;
+        let mut headers = 0;
+        while let Some(packet) = reader.read_packet().unwrap() {
+            if headers < 2 {
+                headers += 1;
+                continue;
+            }
+            let n = decoder
+                .decode(&packet.data, &mut out, ropus::DecodeMode::Normal)
+                .unwrap();
+            assert_eq!(n, FRAME_SAMPLES);
+            frames += 1;
+            energy += out.iter().map(|&v| (v as f64).powi(2)).sum::<f64>();
+        }
+        // 48000 サンプル + pre-skip パディング = 51〜52 フレーム程度。
+        assert!(frames >= 50, "expected ~50 frames, got {frames}");
+        let rms = (energy / (frames as f64 * FRAME_SAMPLES as f64)).sqrt();
+        assert!(rms > 4000.0, "decoded signal too quiet (rms={rms:.0})");
     }
 }

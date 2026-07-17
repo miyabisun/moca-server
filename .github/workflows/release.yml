@@ -4,16 +4,10 @@ on:
   push:
     tags:
       - "v*"
-  # タグを切らずにビルドだけ検証できる手動トリガ (リリースへのアップロードはタグ時のみ)
   workflow_dispatch:
 
 permissions:
   contents: write
-
-# audiopus_sys 0.2.2 同梱 opus の CMakeLists は古く、CMake 4.x (Windows/macOS
-# ランナー標準) に最低バージョン要件で拒否される。ポリシー下限を明示して通す。
-env:
-  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
   build:
@@ -38,12 +32,7 @@ jobs:
       - name: Build SPA
         run: cd client && bun install && bun run build
 
-      # Linux はシステムの libopus を pkg-config 経由で使う。Windows/macOS は
-      # pkg-config が無いので audiopus_sys が同梱 opus を CMake でビルドする。
-      - name: Install audio build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev
-
+      # Opus は純 Rust の ropus に移行済み: C ツールチェーンも libopus も不要
       - uses: dtolnay/rust-toolchain@stable
       - name: Build release binary
         run: cargo build --release
