@@ -4,13 +4,33 @@ on:
   push:
     tags:
       - "v*"
+  # タグを切らずにビルドだけ検証できる手動トリガ (リリースへのアップロードはタグ時のみ)
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# audiopus_sys 0.2.2 同梱 opus の CMakeLists は古く、CMake 4.x (Windows/macOS
+# ランナー標準) に最低バージョン要件で拒否される。ポリシー下限を明示して通す。
+env:
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
 jobs:
-  linux:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: moca-server-linux-x86_64
+            binary: target/release/moca-server
+          - os: windows-latest
+            artifact: moca-server-windows-x86_64.exe
+            binary: target/release/moca-server.exe
+          - os: macos-latest # Apple Silicon (aarch64)
+            artifact: moca-server-macos-aarch64
+            binary: target/release/moca-server
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,7 +38,10 @@ jobs:
       - name: Build SPA
         run: cd client && bun install && bun run build
 
+      # Linux はシステムの libopus を pkg-config 経由で使う。Windows/macOS は
+      # pkg-config が無いので audiopus_sys が同梱 opus を CMake でビルドする。
       - name: Install audio build deps
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y pkg-config libopus-dev
 
       - uses: dtolnay/rust-toolchain@stable
@@ -26,21 +49,34 @@ jobs:
         run: cargo build --release
 
       - name: Package artifacts
+        shell: bash
         run: |
-          cp target/release/moca-server moca-server-linux-x86_64
-          sha256sum moca-server-linux-x86_64 > moca-server-linux-x86_64.sha256
-          tar -czf client-build.tar.gz -C client build
+          cp "${{ matrix.binary }}" "${{ matrix.artifact }}"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            shasum -a 256 "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+          else
+            sha256sum "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            tar -czf client-build.tar.gz -C client build
+          fi
+
+      # 手動トリガ (ビルド検証) 用: 成果物をワークフロー artifact として残す
+      - name: Upload workflow artifact
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
       - name: Upload to release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            moca-server-linux-x86_64
-            moca-server-linux-x86_64.sha256
-            client-build.tar.gz
+            ${{ matrix.artifact }}
+            ${{ matrix.artifact }}.sha256
+            ${{ runner.os == 'Linux' && 'client-build.tar.gz' || '' }}
 
-  # Windows job は撤去済み (2026-07-10)。audiopus_sys 0.2.2 同梱 opus の
-  # CMakeLists が CMake 4.x の最低バージョン要件で拒否されるため。
-  # 復活させる時は env に CMAKE_POLICY_VERSION_MINIMUM=3.5 を足すと通る見込み。
-  # Docker job も撤去済み: VOICEPEAK がコンテナ内でのみ合成を拒否する
+  # Docker job は撤去済み: VOICEPEAK がコンテナ内でのみ合成を拒否する
   # (コンテナ検知と思われる) ため、配布はネイティブバイナリのみとする。
