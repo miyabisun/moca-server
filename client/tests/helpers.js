@@ -53,6 +53,16 @@ export function project(name, lines = [], { id } = {}) {
 	};
 }
 
+// Factory: a reading-dictionary entry with the server's field shape.
+export function dictionaryEntry(surface, reading, { id } = {}) {
+	return {
+		id: id ?? nextId('d'),
+		surface,
+		reading,
+		created_at: '2026-01-01T00:00:00Z'
+	};
+}
+
 function serializeList(store) {
 	return store.projects.map((p) => ({
 		id: p.id,
@@ -96,9 +106,15 @@ const jsonBody = (data) => ({
 // otherwise the route answers 502 so tests exercise the fixed-line fallback path.
 export async function installApi(
 	page,
-	{ projects = [], analyzeResult = [{ happy: 0 }], sayAudio = null, workTalkResult = null } = {}
+	{
+		projects = [],
+		dictionary = [],
+		analyzeResult = [{ happy: 0 }],
+		sayAudio = null,
+		workTalkResult = null
+	} = {}
 ) {
-	const store = { projects };
+	const store = { projects, dictionary };
 	const requests = [];
 	const find = (id) => store.projects.find((p) => p.id === id);
 	const findLine = (id) => {
@@ -148,6 +164,45 @@ export async function installApi(
 		if (path === '/work/talk') {
 			if (workTalkResult) return route.fulfill(jsonBody(workTalkResult));
 			return route.fulfill({ status: 502, contentType: 'text/plain', body: 'no backend' });
+		}
+
+		// --- Reading dictionary ---
+		if (path === '/api/dictionary' && method === 'GET') {
+			return route.fulfill(
+				jsonBody([...store.dictionary].sort((a, b) => a.surface.localeCompare(b.surface)))
+			);
+		}
+		if (path === '/api/dictionary' && method === 'POST') {
+			let entry = store.dictionary.find((x) => x.surface === json?.surface);
+			if (entry) entry.reading = json?.reading ?? '';
+			else {
+				entry = dictionaryEntry(json?.surface ?? '', json?.reading ?? '');
+				store.dictionary.push(entry);
+			}
+			return route.fulfill({ ...jsonBody(entry), status: 201 });
+		}
+
+		let dictMatch = path.match(/^\/api\/dictionary\/([^/]+)$/);
+		if (dictMatch) {
+			const entry = store.dictionary.find((x) => String(x.id) === dictMatch[1]);
+			if (method === 'PATCH') {
+				if (!entry)
+					return route.fulfill({
+						...jsonBody({ error: 'not found' }),
+						status: 404
+					});
+				if (store.dictionary.some((x) => x.id !== entry.id && x.surface === json?.surface))
+					return route.fulfill({
+						...jsonBody({ error: 'surface already exists' }),
+						status: 409
+					});
+				Object.assign(entry, json);
+				return route.fulfill(jsonBody(entry));
+			}
+			if (method === 'DELETE') {
+				store.dictionary = store.dictionary.filter((x) => String(x.id) !== dictMatch[1]);
+				return route.fulfill(jsonBody({ ok: true }));
+			}
 		}
 
 		// --- Projects list ---

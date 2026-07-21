@@ -27,6 +27,8 @@ export const reorderLines = (projectId, order) =>
 export const listDict = () => fetcher('/api/dictionary');
 export const createDict = (surface, reading) =>
 	fetcher('/api/dictionary', json('POST', { surface, reading }));
+export const updateDict = (id, surface, reading) =>
+	fetcher(`/api/dictionary/${id}`, json('PATCH', { surface, reading }));
 export const deleteDict = (id) => fetcher(`/api/dictionary/${id}`, json('DELETE'));
 
 // --- Import ---

@@ -719,6 +719,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn dictionary_patch_updates_fields_and_rejects_conflicts() {
+        let app = app();
+        let (_, first) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "API", "reading": "エーピーアイ" })),
+        )
+        .await;
+        req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "GPU", "reading": "ジーピーユー" })),
+        )
+        .await;
+        let id = first["id"].as_i64().unwrap();
+
+        let (status, updated) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/dictionary/{id}"),
+            Some(json!({ "surface": "CPU", "reading": "シーピーユー" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(updated["id"], id);
+        assert_eq!(updated["surface"], "CPU");
+        assert_eq!(updated["reading"], "シーピーユー");
+
+        let (conflict, body) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/dictionary/{id}"),
+            Some(json!({ "surface": "GPU", "reading": "別の読み" })),
+        )
+        .await;
+        assert_eq!(conflict, StatusCode::CONFLICT);
+        assert_eq!(body, json!({ "error": "surface already exists" }));
+    }
+
+    #[tokio::test]
+    async fn dictionary_patch_validates_body_and_id() {
+        let app = app();
+        let (_, row) = req(
+            &app,
+            Method::POST,
+            "/api/dictionary",
+            Some(json!({ "surface": "API", "reading": "エーピーアイ" })),
+        )
+        .await;
+        let id = row["id"].as_i64().unwrap();
+
+        let (empty, _) = req(
+            &app,
+            Method::PATCH,
+            &format!("/api/dictionary/{id}"),
+            Some(json!({ "surface": " ", "reading": "よみ" })),
+        )
+        .await;
+        assert_eq!(empty, StatusCode::BAD_REQUEST);
+
+        let (missing, _) = req(
+            &app,
+            Method::PATCH,
+            "/api/dictionary/999",
+            Some(json!({ "surface": "X", "reading": "エックス" })),
+        )
+        .await;
+        assert_eq!(missing, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn dictionary_delete_and_404() {
         let app = app();
         let (_, row) = req(
@@ -985,7 +1058,11 @@ mod tests {
     #[tokio::test]
     async fn moca_assets_without_dir_is_404_not_spa() {
         let app = app(); // assets_dir はテスト用の存在しないディレクトリ
-        for path in ["/moca-assets/moca_illust/001.png", "/moca-assets", "/moca-assets/"] {
+        for path in [
+            "/moca-assets/moca_illust/001.png",
+            "/moca-assets",
+            "/moca-assets/",
+        ] {
             let (status, body) = req(&app, Method::GET, path, None).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "path: {path}");
             assert_eq!(body, Value::Null); // index.html にフォールバックしない

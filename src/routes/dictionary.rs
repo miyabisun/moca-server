@@ -6,7 +6,7 @@ use crate::state::AppState;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get};
+use axum::routing::{get, patch};
 use axum::{Json, Router};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
@@ -16,7 +16,27 @@ use super::{parse_body, parse_id, JsonResult};
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/dictionary", get(list).post(upsert))
-        .route("/api/dictionary/{id}", delete(remove))
+        .route("/api/dictionary/{id}", patch(update).delete(remove))
+}
+
+fn required_fields(body: &Value) -> Result<(&str, &str), AppError> {
+    let surface = body
+        .get("surface")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let reading = body
+        .get("reading")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    if surface.is_empty() {
+        return Err(AppError::BadRequest("surface required".into()));
+    }
+    if reading.is_empty() {
+        return Err(AppError::BadRequest("reading required".into()));
+    }
+    Ok((surface, reading))
 }
 
 fn entry_value(id: i64, surface: String, reading: String, created_at: String) -> Value {
@@ -39,22 +59,7 @@ async fn list(State(state): State<AppState>) -> JsonResult {
 // 追加 / 更新。surface が既存なら reading を上書き (upsert)。insert/update どちらも 201。
 async fn upsert(State(state): State<AppState>, body: Bytes) -> JsonResult {
     let body = parse_body(&body);
-    let surface = body
-        .get("surface")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
-    let reading = body
-        .get("reading")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or("");
-    if surface.is_empty() {
-        return Err(AppError::BadRequest("surface required".into()));
-    }
-    if reading.is_empty() {
-        return Err(AppError::BadRequest("reading required".into()));
-    }
+    let (surface, reading) = required_fields(&body)?;
 
     let conn = state.db.lock().unwrap();
     let existing: Option<i64> = conn
@@ -80,6 +85,39 @@ async fn upsert(State(state): State<AppState>, body: Bytes) -> JsonResult {
         )?,
     };
     Ok((StatusCode::CREATED, Json(row)))
+}
+
+// ID を維持したまま表記・読みを更新する。別 ID の表記との衝突は明示的に 409。
+async fn update(State(state): State<AppState>, Path(id): Path<String>, body: Bytes) -> JsonResult {
+    let id = parse_id(&id)?;
+    let body = parse_body(&body);
+    let (surface, reading) = required_fields(&body)?;
+    let conn = state.db.lock().unwrap();
+    let exists: Option<i64> = conn
+        .query_row("SELECT id FROM dictionary WHERE id = ?1", [id], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    if exists.is_none() {
+        return Err(AppError::NotFound("not found".into()));
+    }
+    let conflict: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM dictionary WHERE surface = ?1 AND id != ?2",
+            (surface, id),
+            |r| r.get(0),
+        )
+        .optional()?;
+    if conflict.is_some() {
+        return Err(AppError::Conflict("surface already exists".into()));
+    }
+    let row = conn.query_row(
+        "UPDATE dictionary SET surface = ?1, reading = ?2 WHERE id = ?3 \
+         RETURNING id, surface, reading, created_at",
+        (surface, reading, id),
+        |r| Ok(entry_value(r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    )?;
+    Ok((StatusCode::OK, Json(row)))
 }
 
 // 削除

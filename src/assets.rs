@@ -108,7 +108,8 @@ async fn download_and_extract(dir: &str, url: &str) -> Result<usize, String> {
         if downloaded > MAX_ZIP_BYTES {
             return Err(format!("zip exceeds {MAX_ZIP_BYTES} bytes"));
         }
-        file.write_all(&chunk).map_err(|e| format!("write tmp: {e}"))?;
+        file.write_all(&chunk)
+            .map_err(|e| format!("write tmp: {e}"))?;
     }
     drop(file);
 
@@ -125,11 +126,8 @@ async fn download_and_extract(dir: &str, url: &str) -> Result<usize, String> {
         return Err("extracted zip is missing moca_illust/001.png".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| format!("create assets dir: {e}"))?;
-    std::fs::rename(
-        out.join("moca_illust"),
-        Path::new(dir).join("moca_illust"),
-    )
-    .map_err(|e| format!("move into place: {e}"))?;
+    std::fs::rename(out.join("moca_illust"), Path::new(dir).join("moca_illust"))
+        .map_err(|e| format!("move into place: {e}"))?;
     Ok(count)
 }
 
@@ -163,9 +161,7 @@ fn extract_zip(zip_path: &Path, out: &Path) -> Result<usize, String> {
         let written = std::io::copy(&mut (&mut entry).take(budget + 1), &mut dst)
             .map_err(|e| format!("extract file: {e}"))?;
         if written > budget {
-            return Err(format!(
-                "zip expands beyond {MAX_TOTAL_UNCOMPRESSED} bytes"
-            ));
+            return Err(format!("zip expands beyond {MAX_TOTAL_UNCOMPRESSED} bytes"));
         }
         budget -= written;
         count += 1;

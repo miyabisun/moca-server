@@ -42,7 +42,7 @@ test('タブは URL と同期し、リロードや直リンクでも保たれる
 	await expect(page.locator('.panel[data-phase]')).toBeVisible();
 
 	await page.goto('/dict'); // 直リンクも通る
-	await expect(page.getByPlaceholder('表記（例: GPU）')).toBeVisible();
+	await expect(page.getByRole('button', { name: /項目を追加/ })).toBeVisible();
 
 	await page.goBack(); // popstate で作業タブへ戻る
 	await expect(page.locator('.panel[data-phase]')).toBeVisible();
